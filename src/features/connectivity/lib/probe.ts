@@ -1,4 +1,5 @@
 import { DIAG_ENDPOINTS, resolveApiProbeBase } from "./diagnostics";
+import { getSupabaseUrl, getSupabaseAnonKey } from "@/shared/api/baseUrl";
 import type { ConnectionProbe } from "./classify";
 
 const API_PROBE_TIMEOUT_MS = 8000;
@@ -39,12 +40,8 @@ async function probeApi(): Promise<ConnectionProbe["api"]> {
   } catch {}
 
   // 2. Fallback to Supabase /auth/v1/health if configured
-  const supabaseUrl = (
-    import.meta.env.VITE_SUPABASE_URL as string | undefined
-  )?.trim();
-  const supabaseKey = (
-    import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
-  )?.trim();
+  const supabaseUrl = getSupabaseUrl();
+  const supabaseKey = getSupabaseAnonKey();
   if (
     supabaseUrl &&
     supabaseKey &&

@@ -17,7 +17,7 @@ export function resolveApiProbeBase(): string {
   }
   return streamGatewayEnv
     ? streamGatewayEnv.replace(/\/+$/, "")
-    : "http://localhost:8787";
+    : "https://liner-gateway.fahmialfayadh.site";
 }
 
 const COVERS_BASE =
