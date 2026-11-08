@@ -1,7 +1,7 @@
 import { DIAG_ENDPOINTS, resolveApiProbeBase } from "./diagnostics";
 import type { ConnectionProbe } from "./classify";
 
-const API_PROBE_TIMEOUT_MS = 4000;
+const API_PROBE_TIMEOUT_MS = 8000;
 
 async function probeApi(): Promise<ConnectionProbe["api"]> {
   if (typeof navigator !== "undefined" && !navigator.onLine) {
