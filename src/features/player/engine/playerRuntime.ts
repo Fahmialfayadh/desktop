@@ -647,6 +647,12 @@ export class PlayerRuntime {
 
   private attachSource(url: string, isBlob: boolean, trackId: string) {
     const previousBlob = this.activeBlobUrl;
+    const isDirectExternal = !isBlob && url.includes("googlevideo.com");
+    if (isDirectExternal) {
+      this.audio.removeAttribute("crossorigin");
+    } else {
+      this.audio.crossOrigin = "anonymous";
+    }
     this.audio.src = url;
     this.activeBlobUrl = isBlob ? url : null;
     this.attachedTrackId = trackId;

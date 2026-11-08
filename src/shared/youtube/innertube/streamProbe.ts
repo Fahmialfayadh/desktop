@@ -17,6 +17,13 @@ export async function assertStreamReachable(
   contentLength: number | undefined,
   signal?: AbortSignal,
 ): Promise<void> {
+  if (
+    import.meta.env.MODE !== "test" &&
+    typeof window !== "undefined" &&
+    !(window as any).linerElectron
+  ) {
+    return;
+  }
   const probe = new URL(url);
   const offset =
     contentLength && contentLength > PROBE_OFFSET ? PROBE_OFFSET : 0;

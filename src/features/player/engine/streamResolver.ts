@@ -12,6 +12,7 @@ import {
 } from "@/features/connectivity/store/offlineModeStore";
 import {
   resolveSoundCloudStream,
+  searchSoundCloudTracks,
   toSoundCloudTrackId,
 } from "@/shared/media/soundcloud";
 import { resolveLinerStream } from "@/shared/media/liner/linerPlayback";
@@ -86,7 +87,22 @@ async function resolveYoutubeStandIn(
   signal?: AbortSignal,
 ): Promise<PlaybackStream> {
   const videoId = await findYoutubeStandIn(track, signal);
-  if (!videoId) throw new Error("No matching YouTube track found");
+  if (!videoId) {
+    const query = track.artists ? `${track.title} ${track.artists}` : track.title;
+    try {
+      const hits = await searchSoundCloudTracks(query);
+      if (hits.length > 0) {
+        const scStream = fromSoundCloudStream(
+          await resolveSoundCloudStream(hits[0].track.id, { signal }),
+        );
+        scStream.standIn = true;
+        return scStream;
+      }
+    } catch (scErr) {
+      if (isAbortError(scErr, signal)) throw scErr;
+    }
+    throw new Error("No matching YouTube track found");
+  }
   log(
     "cyan",
     "playback",
@@ -98,9 +114,27 @@ async function resolveYoutubeStandIn(
     stream.standIn = true;
     return stream;
   }
-  const stream = await resolveYoutubeAudio(videoId, progressive, signal);
-  stream.standIn = true;
-  return stream;
+  try {
+    const stream = await resolveYoutubeAudio(videoId, progressive, signal);
+    stream.standIn = true;
+    return stream;
+  } catch (ytError) {
+    if (isAbortError(ytError, signal)) throw ytError;
+    const query = track.artists ? `${track.title} ${track.artists}` : track.title;
+    try {
+      const hits = await searchSoundCloudTracks(query);
+      if (hits.length > 0) {
+        const scStream = fromSoundCloudStream(
+          await resolveSoundCloudStream(hits[0].track.id, { signal }),
+        );
+        scStream.standIn = true;
+        return scStream;
+      }
+    } catch (scErr) {
+      if (isAbortError(scErr, signal)) throw scErr;
+    }
+    throw ytError;
+  }
 }
 
 async function resolveSoundCloud(
@@ -149,7 +183,32 @@ async function resolveYoutubeTrack(
     log("cyan", "playback", `resolved liner audio (r2) for "${track.title}"`);
     return fromLinerStream(liner, track);
   }
-  return resolveYoutubeAudio(videoId, progressive, signal);
+  try {
+    return await resolveYoutubeAudio(videoId, progressive, signal);
+  } catch (ytError) {
+    if (isAbortError(ytError, signal)) throw ytError;
+    log(
+      "yellow",
+      "playback",
+      `youtube audio failed for "${track.title}", searching soundcloud fallback: ${String(ytError)}`,
+    );
+    const query = track.artists ? `${track.title} ${track.artists}` : track.title;
+    try {
+      const hits = await searchSoundCloudTracks(query);
+      if (hits.length > 0) {
+        const scTrack = hits[0].track;
+        log("cyan", "playback", `resolved soundcloud fallback ${scTrack.id} for "${track.title}"`);
+        const scStream = fromSoundCloudStream(
+          await resolveSoundCloudStream(scTrack.id, { signal }),
+        );
+        scStream.standIn = true;
+        return scStream;
+      }
+    } catch (scErr) {
+      if (isAbortError(scErr, signal)) throw scErr;
+    }
+    throw ytError;
+  }
 }
 
 export async function resolvePlaybackStream(
