@@ -1,0 +1,5 @@
+# Hostless Cloud Configuration for Backend Gateway
+build:
+  system: "docker"
+  dockerfile_path: "./backend/Dockerfile"
+  build_context_directory: "./backend"
