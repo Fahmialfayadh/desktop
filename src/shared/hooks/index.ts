@@ -28,3 +28,6 @@ export {
 export { useScrollFade, type ScrollFade } from "./useScrollFade";
 
 export { useTweenedNumber, SMOOTH_EASE } from "./useTweenedNumber";
+
+export { useIsMobile, default as useIsMobileDefault } from "./useIsMobile";
+

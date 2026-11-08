@@ -16,11 +16,6 @@ const PROXIED_ROOT_DOMAINS = [
   "apple.com",
   "music.apple.com",
   "amp-api.music.apple.com",
-  "mzstatic.com",
-  "ytimg.com",
-  "googleusercontent.com",
-  "ggpht.com",
-  "scdn.co",
 ];
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);

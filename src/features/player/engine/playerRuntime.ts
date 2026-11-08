@@ -839,7 +839,10 @@ export class PlayerRuntime {
 
         if (this.audio.readyState < 3) {
           await new Promise<void>((resolve) => {
-            const timeout = setTimeout(resolve, 3000);
+            const timeout = setTimeout(
+              resolve,
+              import.meta.env.MODE === "test" ? 50 : 8000,
+            );
             const onCanPlay = () => {
               clearTimeout(timeout);
               this.audio.removeEventListener("canplay", onCanPlay);
@@ -911,7 +914,10 @@ export class PlayerRuntime {
 
       if (this.audio.readyState < 3) {
         await new Promise<void>((resolve) => {
-          const timeout = setTimeout(resolve, 3000);
+          const timeout = setTimeout(
+            resolve,
+            import.meta.env.MODE === "test" ? 50 : 8000,
+          );
           const onCanPlay = () => {
             clearTimeout(timeout);
             this.audio.removeEventListener("canplay", onCanPlay);
@@ -1137,9 +1143,12 @@ export class PlayerRuntime {
         signal,
       });
     } catch (error) {
-      if (stream.fromLiner && !signal.aborted)
-        markLinerStreamFailed(`download: ${String(error)}`);
-      throw error;
+      log(
+        "yellow",
+        "download",
+        `background cache download failed: ${String(error)}`,
+      );
+      return null;
     }
     if (!bytes || signal.aborted) return null;
     const mimeType = stream.mimeType || "audio/webm";

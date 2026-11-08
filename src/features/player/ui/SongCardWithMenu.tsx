@@ -5,6 +5,7 @@ import { playerEngine } from "../engine/playerEngine";
 import { usePlayerStore } from "../store/playerStore";
 import { useToast } from "@/shared/ui";
 import { useTranslation } from "@/languages";
+import { useIsMobile } from "@/shared/hooks";
 
 import type { TrackArtist } from "@/shared/types";
 import { isLocalTrackId } from "@/shared/media/local";
@@ -163,6 +164,8 @@ function SongCardWithMenu({
     if (!isOpen) setMenuPosition(null);
   }, []);
 
+  const isMobile = useIsMobile();
+
   return (
     <SongCard
       id={id}
@@ -171,11 +174,11 @@ function SongCardWithMenu({
       artists={artists}
       artistId={artistId}
       artistList={artistList}
-      artistsClickable={!isLocalTrackId(id)}
+      artistsClickable={!isLocalTrackId(id) && !isMobile}
       coverUrl={coverUrl}
       className={className}
       onPlay={onPlay}
-      onDoubleClick={handleDoubleClick}
+      onDoubleClick={isMobile ? undefined : handleDoubleClick}
       duration={duration}
       releaseDate={releaseDate}
       explicit={explicit}

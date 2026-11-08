@@ -9,6 +9,7 @@ import ExplicitBadge from "@/shared/ui/ExplicitBadge";
 import CoverImage from "@/features/covers/ui/CoverImage";
 import { isCoverReady } from "@/features/covers/lib/coverArt";
 import type { TrackArtist } from "@/shared/types";
+import { useIsMobile } from "@/shared/hooks";
 
 export interface SongCardProps {
   id?: string;
@@ -75,6 +76,8 @@ function SongCard({
   trailingAction,
 }: SongCardProps) {
   const { t } = useTranslation();
+  const isMobile = useIsMobile();
+  const effectiveArtistsClickable = artistsClickable && !isMobile;
   const [imageLoaded, setImageLoaded] = useState(() => isCoverReady(coverUrl));
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -103,7 +106,7 @@ function SongCard({
       return;
     }
     if (!onPlay) return;
-    if (!onDoubleClick) {
+    if (!onDoubleClick || isMobile) {
       onPlay();
       return;
     }
@@ -234,7 +237,7 @@ function SongCard({
               {explicit && (
                 <ExplicitBadge size="md" className="mr-[6px] shrink-0" />
               )}
-              {artistsClickable ? (
+              {effectiveArtistsClickable ? (
                 <ArtistLink
                   name={artists}
                   artistId={artistId}

@@ -25,28 +25,45 @@ class AudioCache {
   }
 
   getLimitBytes(): number {
-    if (typeof window === "undefined" || !window.localStorage) {
+    if (
+      typeof window === "undefined" ||
+      typeof window.localStorage === "undefined" ||
+      typeof window.localStorage.getItem !== "function"
+    ) {
       return DEFAULT_AUDIO_CACHE_LIMIT_BYTES;
     }
-    const val = localStorage.getItem(AUDIO_CACHE_LIMIT_STORAGE_KEY);
-    if (!val) return DEFAULT_AUDIO_CACHE_LIMIT_BYTES;
-    const num = parseInt(val, 10);
-    if (isNaN(num)) return DEFAULT_AUDIO_CACHE_LIMIT_BYTES;
-    if (num === -1) return -1; // Off
-    if (num === 0) return 0; // Unlimited
-    return Math.max(MIN_AUDIO_CACHE_LIMIT_BYTES, num);
+    try {
+      const val = window.localStorage.getItem(AUDIO_CACHE_LIMIT_STORAGE_KEY);
+      if (!val) return DEFAULT_AUDIO_CACHE_LIMIT_BYTES;
+      const num = parseInt(val, 10);
+      if (isNaN(num)) return DEFAULT_AUDIO_CACHE_LIMIT_BYTES;
+      if (num === -1) return -1; // Off
+      if (num === 0) return 0; // Unlimited
+      return Math.max(MIN_AUDIO_CACHE_LIMIT_BYTES, num);
+    } catch {
+      return DEFAULT_AUDIO_CACHE_LIMIT_BYTES;
+    }
   }
 
   async setLimitBytes(bytes: number): Promise<void> {
-    if (typeof window !== "undefined" && window.localStorage) {
-      if (bytes === -1) {
-        localStorage.setItem(AUDIO_CACHE_LIMIT_STORAGE_KEY, "-1");
-      } else if (bytes === 0) {
-        localStorage.setItem(AUDIO_CACHE_LIMIT_STORAGE_KEY, "0");
-      } else {
-        const clamped = Math.max(MIN_AUDIO_CACHE_LIMIT_BYTES, bytes);
-        localStorage.setItem(AUDIO_CACHE_LIMIT_STORAGE_KEY, String(clamped));
-      }
+    if (
+      typeof window !== "undefined" &&
+      typeof window.localStorage !== "undefined" &&
+      typeof window.localStorage.setItem === "function"
+    ) {
+      try {
+        if (bytes === -1) {
+          window.localStorage.setItem(AUDIO_CACHE_LIMIT_STORAGE_KEY, "-1");
+        } else if (bytes === 0) {
+          window.localStorage.setItem(AUDIO_CACHE_LIMIT_STORAGE_KEY, "0");
+        } else {
+          const clamped = Math.max(MIN_AUDIO_CACHE_LIMIT_BYTES, bytes);
+          window.localStorage.setItem(
+            AUDIO_CACHE_LIMIT_STORAGE_KEY,
+            String(clamped),
+          );
+        }
+      } catch {}
     }
     await this.enforceCacheLimit();
   }

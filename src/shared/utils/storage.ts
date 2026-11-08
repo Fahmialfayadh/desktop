@@ -32,9 +32,9 @@ export const debouncedStorage = {
   removeItem: (name: string) => {
     if (typeof window === "undefined") return;
     pendingWrites.delete(name);
-    if (typeof localStorage !== "undefined") {
-      localStorage.removeItem(name);
-    }
+    try {
+      localStorage.removeItem?.(name);
+    } catch {}
   },
   flush: flushPendingWrites,
 };

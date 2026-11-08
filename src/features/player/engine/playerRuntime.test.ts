@@ -171,6 +171,9 @@ describe("PlayerRuntime — buffering hiccups don't flash the loading state", ()
 
 describe("PlayerRuntime audio caching", () => {
   beforeEach(() => {
+    try {
+      localStorage.clear?.();
+    } catch {}
     if (!globalThis.URL.createObjectURL) {
       globalThis.URL.createObjectURL = vi.fn(
         (_blob: Blob) => "blob:mock-object-url",

@@ -71,16 +71,7 @@ export function getCoverProxyUrl(
   return `${COVER_PROXY_BASE}/c/${token}?size=${size}`;
 }
 
-const WEB_ALLOWED_COVER_ROOTS = [
-  "sndcdn.com",
-  "ytimg.com",
-  "googleusercontent.com",
-  "ggpht.com",
-  "scdn.co",
-  "spotifycdn.com",
-  "dzcdn.net",
-  "mzstatic.com",
-];
+const WEB_ALLOWED_COVER_ROOTS = ["sndcdn.com"];
 
 function isWebAllowedCoverHost(hostname: string): boolean {
   return WEB_ALLOWED_COVER_ROOTS.some(
