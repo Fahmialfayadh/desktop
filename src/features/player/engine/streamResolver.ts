@@ -6,6 +6,7 @@ import {
   resolveTvAudioStream,
   toVideoId,
 } from "@/shared/youtube";
+import { resolveInvidiousAudioStream } from "@/shared/youtube/invidiousResolver";
 import {
   isOfflineMode,
   OFFLINE_UNAVAILABLE_MESSAGE,
@@ -120,6 +121,23 @@ async function resolveYoutubeStandIn(
     return stream;
   } catch (ytError) {
     if (isAbortError(ytError, signal)) throw ytError;
+    try {
+      const invidious = await resolveInvidiousAudioStream(videoId, signal);
+      if (invidious) {
+        log("cyan", "playback", `resolved invidious stream for "${track.title}"`);
+        return {
+          url: invidious.url,
+          source: "youtube",
+          expiresAtMs: Date.now() + 6 * 3600 * 1000,
+          mimeType: invidious.mimeType,
+          codec: invidious.codec,
+          bitrate: invidious.bitrate,
+          standIn: true,
+        };
+      }
+    } catch (invErr) {
+      if (isAbortError(invErr, signal)) throw invErr;
+    }
     const query = track.artists ? `${track.title} ${track.artists}` : track.title;
     try {
       const hits = await searchSoundCloudTracks(query);
@@ -187,6 +205,22 @@ async function resolveYoutubeTrack(
     return await resolveYoutubeAudio(videoId, progressive, signal);
   } catch (ytError) {
     if (isAbortError(ytError, signal)) throw ytError;
+    try {
+      const invidious = await resolveInvidiousAudioStream(videoId, signal);
+      if (invidious) {
+        log("cyan", "playback", `resolved invidious stream for "${track.title}"`);
+        return {
+          url: invidious.url,
+          source: "youtube",
+          expiresAtMs: Date.now() + 6 * 3600 * 1000,
+          mimeType: invidious.mimeType,
+          codec: invidious.codec,
+          bitrate: invidious.bitrate,
+        };
+      }
+    } catch (invErr) {
+      if (isAbortError(invErr, signal)) throw invErr;
+    }
     log(
       "yellow",
       "playback",
