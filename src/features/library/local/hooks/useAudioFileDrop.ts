@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useLocalLibraryStore } from "../store/localLibraryStore";
 
 const AUDIO_EXTENSION = /\.(mp3|flac|m4a|aac|ogg|opus|wav|webm)$/i;
 
@@ -47,7 +48,14 @@ export function useAudioFileDrop(onDrop: (files: File[]) => void) {
       event.preventDefault();
       depth.current = 0;
       setDragging(false);
-      onDropRef.current(Array.from(event.dataTransfer?.files ?? []));
+      const files = Array.from(event.dataTransfer?.files ?? []);
+      onDropRef.current(files);
+      if (typeof window !== "undefined" && !window.linerElectron) {
+        const audio = files.filter(isAudioFile);
+        if (audio.length > 0) {
+          void useLocalLibraryStore.getState().importFiles(audio);
+        }
+      }
     };
 
     window.addEventListener("dragenter", enter);

@@ -542,7 +542,7 @@ function OfflineLibraryPage() {
         </div>
 
         <div className="px-[12px] pt-[14px] pb-[20px]">
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(165px,1fr))] gap-[24px] pb-[24px]">
+          <div className="grid grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(165px,1fr))] gap-3 sm:gap-[24px] pb-[24px]">
             <OfflineMixCard />
             {savedLikes.length > 0 || savedLoading ? (
               <LikesPlaylistCard

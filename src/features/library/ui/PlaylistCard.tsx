@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { memo, useCallback, useState, type ReactNode } from "react";
-import { PlaylistFill } from "@mingcute/react";
+import { PlaylistFill, More2Fill } from "@mingcute/react";
 import DropdownMenu from "@/shared/ui/DropdownMenu";
 import type { DropdownMenuItem } from "@/shared/ui/DropdownMenu";
 import type { PlaylistVariant } from "../types";
@@ -154,18 +154,32 @@ function PlaylistCard({
 
   const menu =
     menuItems && menuItems.length > 0 ? (
-      <DropdownMenu
-        trigger={<span />}
-        items={menuItems}
-        open={menuOpen}
-        onOpenChange={handleMenuOpenChange}
-        position={menuPosition}
-      />
+      <div className="absolute top-2 right-2 z-10 opacity-100 md:opacity-0 md:group-hover/card:opacity-100 transition-opacity">
+        <DropdownMenu
+          trigger={
+            <button
+              type="button"
+              aria-label="More options"
+              className="flex h-[32px] w-[32px] items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-md border-0 p-0 cursor-pointer active:scale-95 touch-manipulation"
+              onClick={(e) => {
+                e.stopPropagation();
+                setMenuOpen(!menuOpen);
+              }}
+            >
+              <More2Fill size={18} />
+            </button>
+          }
+          items={menuItems}
+          open={menuOpen}
+          onOpenChange={handleMenuOpenChange}
+          position={menuPosition}
+        />
+      </div>
     ) : null;
 
   if (href) {
     return (
-      <div onContextMenu={handleContextMenu}>
+      <div onContextMenu={handleContextMenu} className="relative group/card">
         <Link
           to={href}
           state={linkState}
@@ -183,7 +197,7 @@ function PlaylistCard({
 
   if (onClick) {
     return (
-      <div onContextMenu={handleContextMenu}>
+      <div onContextMenu={handleContextMenu} className="relative group/card">
         <button
           type="button"
           onClick={onClick}
@@ -199,7 +213,7 @@ function PlaylistCard({
   }
 
   return (
-    <div onContextMenu={handleContextMenu}>
+    <div onContextMenu={handleContextMenu} className="relative group/card">
       <div
         className={`group flex flex-col gap-[8px] ${className}`}
         draggable={false}

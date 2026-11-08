@@ -15,6 +15,10 @@ interface TooltipTargetData {
   side: "top" | "bottom";
 }
 
+const isCoarsePointer = () =>
+  typeof window !== "undefined" &&
+  Boolean(window.matchMedia?.("(pointer: coarse)")?.matches);
+
 function GlobalTooltipPortal({
   text,
   targetRect,
@@ -35,7 +39,7 @@ function GlobalTooltipPortal({
   });
 
   useLayoutEffect(() => {
-    if (!tooltipRef.current || typeof window === "undefined") return;
+    if (!tooltipRef.current || typeof window === "undefined" || isCoarsePointer()) return;
 
     const width = tooltipRef.current.offsetWidth || 80;
     const height = tooltipRef.current.offsetHeight || 26;
@@ -68,6 +72,8 @@ function GlobalTooltipPortal({
 
     setCoords({ top: finalTop, left: finalLeft });
   }, [text, targetRect, requestedSide]);
+
+  if (isCoarsePointer()) return null;
 
   return (
     <div
@@ -200,6 +206,10 @@ export function GlobalTooltip() {
         neutralizeElement(targetWithTitle);
       }
 
+      if (e.pointerType === "touch" || isCoarsePointer()) {
+        return;
+      }
+
       const target = rawTarget.closest<HTMLElement>("[data-tooltip]");
       if (!target || target.closest("[data-no-tooltip]")) {
         return;
@@ -257,6 +267,7 @@ export function GlobalTooltip() {
 
     const handlePointerDown = () => close();
     const handleScroll = () => close();
+    const handleTouchStart = () => close();
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") close();
     };
@@ -264,6 +275,10 @@ export function GlobalTooltip() {
     document.addEventListener("pointerover", handlePointerOver, true);
     document.addEventListener("pointerout", handlePointerOut, true);
     document.addEventListener("pointerdown", handlePointerDown, true);
+    window.addEventListener("touchstart", handleTouchStart, {
+      passive: true,
+      capture: true,
+    });
     window.addEventListener("scroll", handleScroll, true);
     window.addEventListener("keydown", handleKeyDown, true);
     window.addEventListener("blur", close);
@@ -275,13 +290,14 @@ export function GlobalTooltip() {
       document.removeEventListener("pointerover", handlePointerOver, true);
       document.removeEventListener("pointerout", handlePointerOut, true);
       document.removeEventListener("pointerdown", handlePointerDown, true);
+      window.removeEventListener("touchstart", handleTouchStart, true);
       window.removeEventListener("scroll", handleScroll, true);
       window.removeEventListener("keydown", handleKeyDown, true);
       window.removeEventListener("blur", close);
     };
   }, []);
 
-  if (typeof document === "undefined") return null;
+  if (typeof document === "undefined" || isCoarsePointer()) return null;
 
   return createPortal(
     <AnimatePresence>

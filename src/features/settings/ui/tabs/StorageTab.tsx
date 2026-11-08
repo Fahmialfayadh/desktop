@@ -5,10 +5,11 @@ import lottie, {
 } from "lottie-web/build/player/lottie_light";
 import { CheckCircle } from "@solar-icons/react";
 import Button from "@/shared/ui/Button";
-import { ToggleSwitch, useToast } from "@/shared/ui";
+import { ToggleSwitch, TextInput, useToast } from "@/shared/ui";
 import { useCachedTracksStore } from "@/features/library/cached";
 import { PresetPills } from "@/shared/ui/PresetPills";
 import { useTranslation } from "@/languages";
+import { cn } from "@/shared/lib";
 import cleanDuckAnimationData from "@/assets/animations/clean_duck.json";
 import {
   getCachedStorageAnalytics,
@@ -21,22 +22,33 @@ import {
   type StorageAnalytics,
   LIBRARY_CATEGORY_IDS,
 } from "@/shared/utils/cacheManager";
+import { MIN_AUDIO_CACHE_LIMIT_BYTES } from "@/shared/storage/audioCache";
 import { useSavedTracksStore } from "@/features/library/saved";
-import { SettingRow, SettingSection } from "../controls";
+import { SettingRow, SettingBlock, SettingSection } from "../controls";
 import {
   SMOOTH_EASE,
   StorageOverview,
   useSongEstimate,
 } from "./StorageOverview";
-import { StorageSizeAction } from "./StorageSizeAction";
 import { StorageFolderButton } from "./StorageFolderButton";
 import { StorageDownloadsSection } from "./StorageDownloadsSection";
 
+const MB = 1024 * 1024;
 const GB = 1024 * 1024 * 1024;
-const CACHE_LIMIT_OPTIONS = [GB, 3 * GB, 10 * GB, 0];
 const FALLBACK_SONG_BYTES = 4 * 1024 * 1024;
 const MIN_SONG_BYTES = 2 * 1024 * 1024;
 const MAX_SONG_BYTES = 12 * 1024 * 1024;
+
+const CACHE_LIMIT_PRESETS: readonly { value: number; label: string }[] = [
+  { value: 100 * MB, label: "100 MB" },
+  { value: 250 * MB, label: "250 MB" },
+  { value: 500 * MB, label: "500 MB" },
+  { value: 1 * GB, label: "1 GB" },
+  { value: 2 * GB, label: "2 GB" },
+  { value: 5 * GB, label: "5 GB" },
+  { value: 0, label: "Unlimited" },
+  { value: -1, label: "Off" },
+];
 
 function TelegramCleaningDuck({ size = 130 }: { size?: number }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -115,6 +127,10 @@ export function StorageTab({ searchQuery }: { searchQuery?: string }) {
   const [cacheLimit, setCacheLimit] = useState<number>(() =>
     getAudioCacheLimitBytes(),
   );
+  const [customInput, setCustomInput] = useState<string>("");
+  const [customUnit, setCustomUnit] = useState<"MB" | "GB">("MB");
+  const [customError, setCustomError] = useState<string | null>(null);
+
   const savedCount = useSavedTracksStore((state) => state.records.length);
   const cachedVisibleOnline = useCachedTracksStore(
     (state) => state.visibleOnline,
@@ -132,6 +148,28 @@ export function StorageTab({ searchQuery }: { searchQuery?: string }) {
     await setAudioCacheLimitBytes(newLimit);
     await refresh();
   };
+
+  const handleApplyCustom = async () => {
+    const num = parseFloat(customInput);
+    if (isNaN(num) || num <= 0) {
+      setCustomError("Enter a valid positive number");
+      return;
+    }
+    const multiplier = customUnit === "GB" ? GB : MB;
+    const bytes = Math.round(num * multiplier);
+    if (bytes < MIN_AUDIO_CACHE_LIMIT_BYTES) {
+      setCustomError("Minimum cache limit is 50 MB");
+      return;
+    }
+    setCustomError(null);
+    await handleLimitChange(bytes);
+  };
+
+  useEffect(() => {
+    if (typeof navigator !== "undefined" && navigator.storage?.persist) {
+      navigator.storage.persist().catch(() => {});
+    }
+  }, []);
 
   useEffect(() => {
     if (!getCachedStorageAnalytics()) return;
@@ -168,6 +206,13 @@ export function StorageTab({ searchQuery }: { searchQuery?: string }) {
   const cacheBytes = cacheCategories.reduce((sum, c) => sum + c.bytes, 0);
   const musicBytes = musicCategories.reduce((sum, c) => sum + c.bytes, 0);
 
+  const audioCategory = useMemo(
+    () => cacheCategories.find((c) => c.id === "audio"),
+    [cacheCategories],
+  );
+  const audioBytes = audioCategory?.bytes ?? 0;
+  const audioCount = audioCategory?.count ?? 0;
+
   const songBytes = useMemo(() => {
     const sample = musicCategories.find(
       (c) => c.bytes > 0 && (c.count ?? 0) > 0,
@@ -177,11 +222,20 @@ export function StorageTab({ searchQuery }: { searchQuery?: string }) {
     return Math.min(MAX_SONG_BYTES, Math.max(MIN_SONG_BYTES, average));
   }, [musicCategories]);
 
-  const cacheLimitSongs = useSongEstimate(cacheLimit, songBytes);
-  const cacheLimitDescription =
-    cacheLimit > 0
-      ? t("settings.storage.cache_limit_hint", { count: cacheLimitSongs })
-      : t("settings.storage.cache_limit_unlimited");
+  const cacheLimitSongs = useSongEstimate(
+    cacheLimit > 0 ? cacheLimit : 0,
+    songBytes,
+  );
+
+  const cacheLimitDescription = useMemo(() => {
+    if (cacheLimit === -1) {
+      return "Caching is disabled. Tracks stream directly without being saved.";
+    }
+    if (cacheLimit === 0) {
+      return t("settings.storage.cache_limit_unlimited");
+    }
+    return `${t("settings.storage.cache_limit_hint", { count: cacheLimitSongs })} (${formatStorageBytes(cacheLimit)})`;
+  }, [cacheLimit, cacheLimitSongs, t]);
 
   const runClear = async (
     kind: ClearKind,
@@ -221,9 +275,14 @@ export function StorageTab({ searchQuery }: { searchQuery?: string }) {
     }
   };
 
+  const clearAudioCache = () => {
+    if (audioBytes === 0) return;
+    void runClear("cache", audioBytes, () => clearStorageCategories(["audio"]));
+  };
+
   const clearCache = () => {
     const ids = cacheCategories.map((c) => c.id);
-    if (ids.length === 0) return;
+    if (ids.length === 0 || cacheBytes === 0) return;
     void runClear("cache", cacheBytes, () => clearStorageCategories(ids));
   };
 
@@ -311,12 +370,118 @@ export function StorageTab({ searchQuery }: { searchQuery?: string }) {
             <SettingSection
               label={t("settings.storage.cache_title")}
               action={
-                <StorageFolderButton
-                  label={t("settings.storage.open_folder_short")}
-                  onOpen={() => void handleOpenFolder()}
-                />
+                typeof window !== "undefined" && Boolean(window.linerElectron) ? (
+                  <StorageFolderButton
+                    label={t("settings.storage.open_folder_short")}
+                    onOpen={() => void handleOpenFolder()}
+                  />
+                ) : null
               }
             >
+              <SettingRow
+                title="Cached Songs"
+                description={`${audioCount} ${audioCount === 1 ? "song" : "songs"} (${formatStorageBytes(audioBytes)})`}
+                explained
+                searchQuery={searchQuery}
+                control={
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    type="button"
+                    disabled={audioBytes === 0}
+                    onClick={clearAudioCache}
+                  >
+                    Clear Audio Cache
+                  </Button>
+                }
+              />
+              <SettingBlock
+                title={t("settings.storage.cache_limit")}
+                description={cacheLimitDescription}
+                titleKey="settings.storage.cache_limit"
+                searchQuery={searchQuery}
+              >
+                <div className="flex flex-col gap-3">
+                  <div className="overflow-x-auto max-w-full pb-0.5">
+                    <PresetPills
+                      ariaLabel={t("settings.storage.cache_limit")}
+                      size="md"
+                      fill={false}
+                      value={cacheLimit}
+                      onChange={(value) => void handleLimitChange(value)}
+                      options={CACHE_LIMIT_PRESETS}
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-caption text-text-secondary">
+                      Custom limit:
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <TextInput
+                        type="number"
+                        size="sm"
+                        min={customUnit === "GB" ? 0.05 : 50}
+                        step={customUnit === "GB" ? 0.1 : 10}
+                        placeholder={
+                          customUnit === "GB" ? "e.g. 1.5" : "e.g. 500"
+                        }
+                        value={customInput}
+                        onChange={(e) => {
+                          setCustomInput(e.target.value);
+                          setCustomError(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            void handleApplyCustom();
+                          }
+                        }}
+                        className="w-[110px]"
+                        hasError={Boolean(customError)}
+                      />
+                      <div className="flex rounded-control bg-fill p-[2px] text-caption">
+                        <button
+                          type="button"
+                          onClick={() => setCustomUnit("MB")}
+                          className={cn(
+                            "h-[24px] rounded-[6px] px-2 text-[11px] font-[600] transition-colors",
+                            customUnit === "MB"
+                              ? "bg-fill-hover text-text-primary"
+                              : "text-text-secondary hover:text-text-primary",
+                          )}
+                        >
+                          MB
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCustomUnit("GB")}
+                          className={cn(
+                            "h-[24px] rounded-[6px] px-2 text-[11px] font-[600] transition-colors",
+                            customUnit === "GB"
+                              ? "bg-fill-hover text-text-primary"
+                              : "text-text-secondary hover:text-text-primary",
+                          )}
+                        >
+                          GB
+                        </button>
+                      </div>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        type="button"
+                        onClick={() => void handleApplyCustom()}
+                      >
+                        Apply
+                      </Button>
+                    </div>
+                    {customError && (
+                      <span className="text-caption text-red-500 w-full">
+                        {customError}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </SettingBlock>
               <SettingRow
                 title={t("settings.storage.cache_row_title")}
                 description={t("settings.storage.cache_row_desc")}
@@ -325,38 +490,20 @@ export function StorageTab({ searchQuery }: { searchQuery?: string }) {
                 descKey="settings.storage.cache_row_desc"
                 searchQuery={searchQuery}
                 control={
-                  <StorageSizeAction
-                    bytes={cacheBytes}
-                    actionLabel={t("settings.storage.clear")}
-                    confirmLabel={t("settings.storage.clear_size", {
-                      size: formatStorageBytes(cacheBytes),
-                    })}
-                    disabled={cacheBytes === 0}
-                    onConfirm={clearCache}
-                  />
-                }
-              />
-              <SettingRow
-                title={t("settings.storage.cache_limit")}
-                description={cacheLimitDescription}
-                explained
-                titleKey="settings.storage.cache_limit"
-                searchQuery={searchQuery}
-                control={
-                  <PresetPills
-                    ariaLabel={t("settings.storage.cache_limit")}
-                    size="md"
-                    fill={false}
-                    value={cacheLimit}
-                    onChange={(value) => void handleLimitChange(value)}
-                    options={CACHE_LIMIT_OPTIONS.map((bytes) => ({
-                      value: bytes,
-                      label:
-                        bytes === 0
-                          ? t("settings.storage.no_limit")
-                          : `${bytes / GB} GB`,
-                    }))}
-                  />
+                  <div className="flex items-center gap-2">
+                    <span className="text-caption text-text-secondary tabular-nums">
+                      {formatStorageBytes(cacheBytes)}
+                    </span>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      type="button"
+                      disabled={cacheBytes === 0}
+                      onClick={clearCache}
+                    >
+                      Clear All Cache
+                    </Button>
+                  </div>
                 }
               />
               <SettingRow

@@ -1,4 +1,5 @@
 import { YOUTUBE_THUMBNAIL_HOST } from "@/shared/youtube/playlist/youtubeUrl";
+import { getStreamGatewayUrl } from "@/shared/api/baseUrl";
 
 // client-side cover proxy url minting and signing
 // derives covers.tryliner.fun fallback url directly from track raw cover url
@@ -70,6 +71,23 @@ export function getCoverProxyUrl(
   return `${COVER_PROXY_BASE}/c/${token}?size=${size}`;
 }
 
+const WEB_ALLOWED_COVER_ROOTS = [
+  "sndcdn.com",
+  "ytimg.com",
+  "googleusercontent.com",
+  "ggpht.com",
+  "scdn.co",
+  "spotifycdn.com",
+  "dzcdn.net",
+  "mzstatic.com",
+];
+
+function isWebAllowedCoverHost(hostname: string): boolean {
+  return WEB_ALLOWED_COVER_ROOTS.some(
+    (root) => hostname === root || hostname.endsWith(`.${root}`),
+  );
+}
+
 async function computeFallback(coverUrl: string): Promise<string | undefined> {
   let parsed: URL;
   try {
@@ -77,17 +95,28 @@ async function computeFallback(coverUrl: string): Promise<string | undefined> {
   } catch {
     return undefined;
   }
-  if (parsed.protocol !== "https:" || !COVER_PROXY_HOSTS.has(parsed.hostname)) {
+  if (parsed.protocol !== "https:") {
     return undefined;
   }
-  const payload = base64UrlEncode(
-    JSON.stringify({
-      u: sizeAgnosticUrl(coverUrl, parsed.hostname),
-      s: COVER_PROXY_SIZE,
-    }),
-  );
-  const token = await signCoverUrl(payload);
-  return getCoverProxyUrl(token, COVER_PROXY_SIZE);
+
+  if (isElectron() || import.meta.env?.MODE === "test") {
+    if (!COVER_PROXY_HOSTS.has(parsed.hostname)) {
+      return undefined;
+    }
+    const payload = base64UrlEncode(
+      JSON.stringify({
+        u: sizeAgnosticUrl(coverUrl, parsed.hostname),
+        s: COVER_PROXY_SIZE,
+      }),
+    );
+    const token = await signCoverUrl(payload);
+    return getCoverProxyUrl(token, COVER_PROXY_SIZE);
+  }
+
+  if (isWebAllowedCoverHost(parsed.hostname)) {
+    return `${getStreamGatewayUrl()}/api/proxy?url=${encodeURIComponent(coverUrl)}`;
+  }
+  return undefined;
 }
 
 /**

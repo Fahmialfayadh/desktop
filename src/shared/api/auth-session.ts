@@ -3,7 +3,12 @@ import { signApiRequest, syncServerTime } from "./requestSigner";
 
 export type { AuthTokens, AuthUser };
 
-import { getApiBaseUrl } from "./baseUrl";
+import {
+  getApiBaseUrl,
+  getSupabaseUrl,
+  getSupabaseAnonKey,
+  isSupabaseConfigured,
+} from "./baseUrl";
 
 const STORAGE_KEY = "liner_auth_session";
 const DEAD_REFRESH_CODES = new Set([
@@ -232,9 +237,64 @@ async function refreshInMain(
 }
 
 async function refreshHere(current: AuthTokens): Promise<AuthTokens | null> {
+  if (isSupabaseConfigured()) {
+    try {
+      const response = await postRefresh(current.refreshToken);
+      if (response.ok) {
+        const data = (await response.json()) as any;
+        const expiresAtMs = data.expires_at
+          ? data.expires_at * 1000
+          : Date.now() + (data.expires_in || 3600) * 1000;
+        const merged: AuthTokens = {
+          ...current,
+          accessToken: data.access_token,
+          refreshToken: data.refresh_token,
+          accessTokenExpiresAt: new Date(expiresAtMs).toISOString(),
+          expiresAt: expiresAtMs,
+          user: data.user ? { ...current.user, ...data.user } : current.user,
+        };
+        setAuthSession(merged);
+        return merged;
+      }
+      if (response.status === 400 || response.status === 401) {
+        const body = (await response.json().catch(() => ({}))) as any;
+        const err = String(body.error || body.error_description || "").toLowerCase();
+        if (err.includes("invalid") || err.includes("expired") || err.includes("grant")) {
+          setAuthSession(null);
+          return null;
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Local fallback tokens renewal
+  if (current.refreshToken.startsWith("local_refresh_")) {
+    const expiresAtMs = Date.now() + 30 * 24 * 60 * 60 * 1000;
+    const merged: AuthTokens = {
+      ...current,
+      accessTokenExpiresAt: new Date(expiresAtMs).toISOString(),
+      expiresAt: expiresAtMs,
+    };
+    setAuthSession(merged);
+    return merged;
+  }
+
   let reason = "";
   for (let attempt = 0; attempt < REFRESH_ATTEMPTS; attempt++) {
-    const response = await postRefresh(current.refreshToken);
+    const response = await postRefresh(current.refreshToken).catch(() => null);
+    if (!response) {
+      const expiresAtMs = Date.now() + 30 * 24 * 60 * 60 * 1000;
+      const merged: AuthTokens = {
+        ...current,
+        accessTokenExpiresAt: new Date(expiresAtMs).toISOString(),
+        expiresAt: expiresAtMs,
+      };
+      setAuthSession(merged);
+      return merged;
+    }
 
     if (response.ok) {
       const next = (await response.json()) as AuthTokens;
@@ -272,6 +332,18 @@ async function refreshHere(current: AuthTokens): Promise<AuthTokens | null> {
 }
 
 async function postRefresh(refreshToken: string): Promise<Response> {
+  if (isSupabaseConfigured()) {
+    const body = JSON.stringify({ refresh_token: refreshToken });
+    return fetch(`${getSupabaseUrl()}/auth/v1/token?grant_type=refresh_token`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: getSupabaseAnonKey(),
+      },
+      body,
+    });
+  }
+
   const body = JSON.stringify({ refreshToken });
   const signedHeaders = await signApiRequest("POST", "/v1/auth/refresh", body);
   const response = await fetch(`${getApiBaseUrl()}/v1/auth/refresh`, {
@@ -317,6 +389,24 @@ export async function clearAuthSession(): Promise<void> {
   }
   setAuthSession(null);
   if (!current?.refreshToken) return;
+
+  if (isSupabaseConfigured()) {
+    try {
+      await fetch(`${getSupabaseUrl()}/auth/v1/logout`, {
+        method: "POST",
+        headers: {
+          apikey: getSupabaseAnonKey(),
+          Authorization: `Bearer ${current.accessToken}`,
+        },
+      });
+    } catch {}
+    return;
+  }
+
+  if (current.refreshToken.startsWith("local_refresh_")) {
+    return;
+  }
+
   const body = JSON.stringify({ refreshToken: current.refreshToken });
   const signedHeaders = await signApiRequest("POST", "/v1/auth/logout", body);
   const response = await fetch(`${getApiBaseUrl()}/v1/auth/logout`, {

@@ -9,6 +9,12 @@ import type { DropdownMenuItem } from "@/shared/ui/DropdownMenu";
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
+let mockOffline = false;
+vi.mock("@/features/connectivity", () => ({
+  useOfflineModeStore: (selector: (state: { offline: boolean }) => any) =>
+    selector({ offline: mockOffline }),
+}));
+
 vi.mock("@/features/library", () => ({
   usePlaylistsList: () => ({ data: { playlists: [] } }),
   useLikeTrack: () => ({ mutate: vi.fn() }),
@@ -178,5 +184,74 @@ describe("useSongMenuItems", () => {
       coverUrl: "",
     })();
     expect(elsewhere.map((item) => item.id)).not.toContain("remove-from-queue");
+  });
+
+  it("includes download-mp3 item for a cloud track and triggers browser download", () => {
+    mockOffline = false;
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+
+    const getResult = renderHookHelper({
+      id: "yt-video-123",
+      title: "Song Title",
+      artists: "Artist Name",
+      coverUrl: "https://example.com/cover.jpg",
+    });
+
+    const items = getResult();
+    const downloadItem = items.find((item) => item.id === "download-mp3");
+    expect(downloadItem).toBeDefined();
+    expect(downloadItem?.label).toBe("Download MP3");
+
+    act(() => {
+      downloadItem?.onClick?.();
+    });
+
+    expect(clickSpy).toHaveBeenCalled();
+    expect(showToast).toHaveBeenCalledWith("Downloading MP3", "checkmark", {
+      description: "Song Title - Artist Name",
+    });
+    clickSpy.mockRestore();
+  });
+
+  it("does not include download-mp3 item for local tracks", () => {
+    mockOffline = false;
+    const getResult = renderHookHelper({
+      id: "local:12345",
+      title: "Local Track",
+      artists: "Local Artist",
+      coverUrl: "",
+    });
+
+    const items = getResult();
+    expect(items.map((i) => i.id)).not.toContain("download-mp3");
+  });
+
+  it("does not include download-mp3 item in offline mode", () => {
+    mockOffline = true;
+    const getResult = renderHookHelper({
+      id: "yt-video-123",
+      title: "Song Title",
+      artists: "Artist Name",
+      coverUrl: "",
+    });
+
+    const items = getResult();
+    expect(items.map((i) => i.id)).not.toContain("download-mp3");
+    mockOffline = false;
+  });
+
+  it("does not include download-mp3 item for soundcloud tracks", () => {
+    mockOffline = false;
+    const getResult = renderHookHelper({
+      id: "sc:99999",
+      title: "SoundCloud Song",
+      artists: "SC Artist",
+      coverUrl: "",
+    });
+
+    const items = getResult();
+    expect(items.map((i) => i.id)).not.toContain("download-mp3");
   });
 });

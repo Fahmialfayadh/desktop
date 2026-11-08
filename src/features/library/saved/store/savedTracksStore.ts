@@ -28,6 +28,7 @@ import {
   saveLyricsToDevice,
   saveTrackToDevice,
 } from "../engine/savedTrackFetcher";
+import { webLocalTracks } from "@/shared/storage/webLocalTracks";
 
 export const SAVE_LIKED_ENABLED_KEY = "liner_save_liked_enabled";
 export const SAVED_LIMIT_KEY = "liner_saved_limit_bytes";
@@ -124,14 +125,21 @@ const sync = createSavedTrackSync({
   isEnabled: () => useSavedTracksStore.getState().enabled,
   limitBytes: () => useSavedTracksStore.getState().limitBytes,
   usage: async () => {
-    const usage = await window.linerElectron?.savedTracksUsage();
-    return usage ?? { bytes: 0, freeBytes: null };
+    if (window.linerElectron?.savedTracksUsage) {
+      const usage = await window.linerElectron.savedTracksUsage();
+      return usage ?? { bytes: 0, freeBytes: null };
+    }
+    return webLocalTracks.getSavedUsage();
   },
   saveTrack: (track) =>
     saveTrackToDevice(track, AbortSignal.timeout(5 * 60_000)),
   saveLyrics: saveLyricsToDevice,
   remove: async (trackIds) => {
-    await window.linerElectron?.savedTracksRemove(trackIds);
+    if (window.linerElectron?.savedTracksRemove) {
+      await window.linerElectron.savedTracksRemove(trackIds);
+    } else {
+      await webLocalTracks.removeSavedTracks(trackIds);
+    }
   },
   classify: classifySaveFailure,
   readMemory,
@@ -153,7 +161,15 @@ export const useSavedTracksStore = create<SavedTracksState>((set, get) => ({
   load: async () => {
     const bridge = window.linerElectron;
     if (!bridge?.savedTracksList) {
-      set({ loadState: "unavailable" });
+      if (get().loadState === "loading" || get().loadState === "ready") return;
+      set({ loadState: "loading" });
+      try {
+        const records = await webLocalTracks.listSavedTracks();
+        set({ ...withTracks(records), loadState: "ready" });
+        sync.setRecords(records);
+      } catch {
+        set({ loadState: "ready" });
+      }
       return;
     }
     if (get().loadState === "loading" || get().loadState === "ready") return;
@@ -182,7 +198,6 @@ export const useSavedTracksStore = create<SavedTracksState>((set, get) => ({
 
   removeAll: async () => {
     const bridge = window.linerElectron;
-    if (!bridge) return 0;
     const current = usePlayerStore.getState().currentTrack?.id;
     const removing = get().records.map((record) => record.trackId);
     writeStorage(SAVE_LIKED_ENABLED_KEY, "0");
@@ -191,7 +206,11 @@ export const useSavedTracksStore = create<SavedTracksState>((set, get) => ({
     if (current && removing.includes(current))
       await playerEngine.stopAndClear().catch(() => {});
     if (removing.length === 0) return 0;
-    return bridge.savedTracksRemove(removing);
+    if (bridge?.savedTracksRemove) {
+      return bridge.savedTracksRemove(removing);
+    }
+    await webLocalTracks.removeSavedTracks(removing);
+    return removing.length;
   },
 }));
 
@@ -216,7 +235,6 @@ let started = false;
 
 export function initSavedTracks() {
   if (started || typeof window === "undefined") return;
-  if (!window.linerElectron?.savedTracksList) return;
   started = true;
   void useSavedTracksStore
     .getState()

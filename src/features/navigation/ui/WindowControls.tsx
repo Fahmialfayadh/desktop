@@ -53,6 +53,10 @@ export default function WindowControls({
   bare = false,
   isFullscreen = false,
 }: WindowControlsProps) {
+  if (typeof window !== "undefined" && !window.linerElectron) {
+    return null;
+  }
+
   const { t } = useTranslation();
   const { isFullScreen: isWindowFullScreen, isMaximized: isWindowMaximized } =
     useWindowState();

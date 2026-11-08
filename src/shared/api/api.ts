@@ -10,7 +10,7 @@ import {
 import { signApiRequest, syncServerTime } from "./requestSigner";
 import { clientCatalog } from "./clientCatalog";
 import { getLocalImportHandler } from "./localImports";
-import type { Track } from "@/shared/contracts";
+import type { Track, Cover } from "@/shared/contracts";
 import { telemetry } from "@/shared/telemetry";
 import type {
   PublicUser,
@@ -33,6 +33,71 @@ import {
   stripQuery,
 } from "@/features/connectivity";
 import { enterOfflineMode } from "@/features/connectivity/engine/offlineController";
+import { supabaseApi } from "@/shared/supabase";
+import { searchLyricsWithLrclib, streamLyricsWithLrclib } from "./lrclibLyrics";
+import { linerDb } from "@/shared/storage";
+
+function toContractTrack(source: any): Track {
+  if (!source) {
+    return {
+      id: "",
+      title: "",
+      artists: [],
+      durationMs: 0,
+    };
+  }
+
+  let artists: { id: string; name: string }[] = [];
+  if (Array.isArray(source.artists)) {
+    artists = source.artists.map((a: any) => ({
+      id: typeof a === "string" ? "" : (a?.id || ""),
+      name: typeof a === "string" ? a : (a?.name || ""),
+    }));
+  } else if (typeof source.artists === "string" && source.artists.trim()) {
+    artists = source.artists
+      .split(",")
+      .map((p: string) => ({
+        id: source.artistId || "",
+        name: p.trim(),
+      }))
+      .filter((a: any) => a.name);
+  } else if (typeof source.artist === "string" && source.artist.trim()) {
+    artists = [{ id: source.artistId || "", name: source.artist.trim() }];
+  } else if (typeof source.artist === "object" && source.artist !== null) {
+    artists = [{ id: source.artist?.id || "", name: source.artist?.name || "" }];
+  }
+
+  const coverUrl =
+    source.cover?.url ||
+    source.coverUrl ||
+    source.thumbnail ||
+    (typeof source.cover === "string" ? source.cover : "");
+
+  const cover: Cover | undefined = coverUrl
+    ? {
+        url: coverUrl,
+        width: source.cover?.width || 500,
+        height: source.cover?.height || 500,
+        fallbackUrl: source.cover?.fallbackUrl,
+      }
+    : undefined;
+
+  return {
+    id: String(source.id || source.trackId || ""),
+    title: String(source.title || source.name || ""),
+    artists,
+    album: source.album
+      ? {
+          id: String(source.album.id || ""),
+          title: String(source.album.title || source.album.name || ""),
+        }
+      : undefined,
+    durationMs: Number(source.durationMs || source.duration || 0),
+    cover,
+    explicit: Boolean(source.explicit),
+    audioVariant: source.audioVariant,
+  };
+}
 
 function translate(key: string, vars?: Record<string, string | number>) {
   try {
@@ -185,6 +250,16 @@ function extractSubFromToken(token: string): string | undefined {
   }
 }
 
+async function getCurrentUserAndToken(): Promise<{ userId: string; token?: string }> {
+  const session = getAuthSession();
+  const token = (await getValidAccessToken()) || session?.accessToken || undefined;
+  const userId =
+    session?.user?.id ||
+    (token ? extractSubFromToken(token) : undefined) ||
+    "local_user";
+  return { userId, token };
+}
+
 export function mediaUrl(path: string): string {
   if (!path) return "";
   if (path.startsWith("http://") || path.startsWith("https://")) return path;
@@ -322,8 +397,6 @@ async function executeRequest<T>(
 
   if (res.status === 401 && allowRefresh && !path.startsWith("/v1/auth/")) {
     const currentSession = getAuthSession();
-    // If the token in session store was already rotated by another parallel request,
-    // retry immediately with the rotated token without firing duplicate refresh requests
     let nextToken =
       currentSession?.accessToken && currentSession.accessToken !== accessToken
         ? currentSession.accessToken
@@ -358,7 +431,6 @@ async function executeRequest<T>(
       throw new ApiError(res.status, message, code, requestId);
     }
 
-    // Retry request with newly signed headers (synced server clock + fresh token if available)
     const refreshedSignedHeaders = await signApiRequest(method, path, rawBody);
     try {
       res = await fetchWithTimeout(
@@ -481,21 +553,8 @@ async function request<T>(
   return executeRequest<T>(path, init, allowRefresh, timeoutMs);
 }
 
-export class ApiError extends Error {
-  constructor(
-    public readonly status: number,
-    message: string,
-    public readonly code?: string,
-    public readonly requestId?: string,
-  ) {
-    super(message);
-    this.name = "ApiError";
-  }
-
-  get traceInfo(): string | undefined {
-    return this.requestId ? `[reqId: ${this.requestId}]` : undefined;
-  }
-}
+export { ApiError } from "./ApiError";
+import { ApiError } from "./ApiError";
 
 // maps any thrown error to a localized human-friendly message.
 // never surfaces raw api bodies, statuses, or technical jargon.
@@ -609,100 +668,20 @@ import type {
   MostSavedType,
 } from "../contracts";
 
-const RETRYABLE_POW_CODES = new Set(["POW_EXPIRED", "POW_REUSED"]);
-
-interface AuthProof {
-  pow?: PowSolution;
-  turnstile?: string;
-  edge?: boolean;
+// In-memory cache for daily mixes (10 minutes TTL)
+interface CachedDailyMixes {
+  timestamp: number;
+  userId: string;
+  response: DailyMixesResponse;
 }
-
-function authBody(proof: AuthProof) {
-  return { pow: proof.pow, turnstile: proof.turnstile };
-}
-
-function authInit(proof: AuthProof, body: unknown): RequestInit {
-  return {
-    method: "POST",
-    body: JSON.stringify(body),
-    ...(proof.edge ? { credentials: "include" as const } : {}),
-  };
-}
-
-function blockedBeforeOurServer(error: unknown): boolean {
-  return error instanceof TypeError || statusOf(error) === 0;
-}
-
-async function humanCheck(
-  challenge: PowChallenge,
-  purpose: HumanCheckAction,
-): Promise<string | undefined> {
-  const requested = challenge.turnstile?.mode;
-  const mode = isHumanCheckMode(requested) ? requested : "off";
-  if (mode === "off" && !challenge.turnstile?.edge) return undefined;
-  return runHumanCheck(purpose, mode === "off" ? "optional" : mode);
-}
-
-async function authProofFor(
-  purpose: HumanCheckAction,
-  email: string,
-): Promise<AuthProof> {
-  let challenge: PowChallenge;
-  try {
-    challenge = await request<PowChallenge>(
-      "/v1/auth/challenge",
-      { method: "POST", body: JSON.stringify({ purpose, email }) },
-      false,
-    );
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 404) return {};
-    throw error;
-  }
-  const work =
-    challenge.mode === "off" || challenge.algorithm !== SUPPORTED_POW_ALGORITHM
-      ? undefined
-      : solvePow(challenge);
-  void work?.catch(() => undefined);
-  const turnstile = await humanCheck(challenge, purpose);
-  return {
-    pow: await work,
-    turnstile,
-    edge: challenge.turnstile?.edge === true,
-  };
-}
-
-async function withAuthProof<T>(
-  purpose: HumanCheckAction,
-  email: string,
-  send: (proof: AuthProof) => Promise<T>,
-): Promise<T> {
-  let proof: AuthProof | undefined;
-  try {
-    proof = await authProofFor(purpose, email);
-    return await send(proof);
-  } catch (error) {
-    const retryable =
-      error instanceof PowTimeoutError ||
-      (error instanceof ApiError &&
-        !!error.code &&
-        RETRYABLE_POW_CODES.has(error.code)) ||
-      (proof?.edge === true && blockedBeforeOurServer(error));
-    if (!retryable) throw error;
-    return send(await authProofFor(purpose, email));
-  }
-}
+let cachedDailyMixes: CachedDailyMixes | null = null;
+const DAILY_MIX_CACHE_TTL_MS = 10 * 60 * 1000;
 
 // ---- Endpoints --------------------------------------------------------------
 
 export const api = {
   async login(email: string, password: string): Promise<AuthTokens> {
-    const result = await withAuthProof("login", email, (proof) =>
-      request<AuthTokens>(
-        "/v1/auth/login",
-        authInit(proof, { email, password, ...authBody(proof) }),
-        false,
-      ),
-    );
+    const result = await supabaseApi.login(email, password);
     setAuthSession(result);
     return result;
   },
@@ -713,124 +692,98 @@ export const api = {
     username: string,
     displayName: string,
   ): Promise<AuthTokens> {
-    const result = await withAuthProof("register", email, (proof) =>
-      request<AuthTokens>(
-        "/v1/auth/register",
-        authInit(proof, {
-          email,
-          password,
-          username: username.trim().toLowerCase(),
-          displayName: displayName.trim(),
-          ...authBody(proof),
-        }),
-        false,
-      ),
+    const result = await supabaseApi.register(
+      email,
+      password,
+      username,
+      displayName,
     );
     setAuthSession(result);
     return result;
   },
 
-  getMe(): Promise<AuthUser> {
-    return request<AuthUser>("/v1/me");
+  async getMe(): Promise<AuthUser> {
+    const { userId, token } = await getCurrentUserAndToken();
+    return supabaseApi.getMe(userId, token);
   },
 
-  updateProfile(data: UpdateProfileInput): Promise<PublicUser> {
-    return request<PublicUser>("/v1/users/me", {
-      method: "PATCH",
-      body: JSON.stringify(data),
-    });
+  async updateProfile(data: UpdateProfileInput): Promise<PublicUser> {
+    const { userId, token } = await getCurrentUserAndToken();
+    return supabaseApi.updateProfile(userId, data, token);
   },
 
-  getUserProfile(idOrUsername: string): Promise<UserProfile> {
-    return request<UserProfile>(
-      `/v1/users/${encodeURIComponent(idOrUsername)}`,
-    );
+  async getUserProfile(idOrUsername: string): Promise<UserProfile> {
+    const { userId, token } = await getCurrentUserAndToken();
+    return supabaseApi.getUserProfile(idOrUsername, userId, token);
   },
 
-  searchUsers(query: string): Promise<UserProfile[]> {
-    const params = new URLSearchParams({ q: query });
-    return request<UserProfile[]>(`/v1/users/search?${params}`);
+  async searchUsers(query: string): Promise<UserProfile[]> {
+    const { token } = await getCurrentUserAndToken();
+    return supabaseApi.searchUsers(query, token);
   },
 
-  followUser(idOrUsername: string): Promise<void> {
-    return request<void>(
-      `/v1/users/${encodeURIComponent(idOrUsername)}/follow`,
-      {
-        method: "POST",
-      },
-    );
+  async followUser(idOrUsername: string): Promise<void> {
+    const { userId, token } = await getCurrentUserAndToken();
+    return supabaseApi.followUser(userId, idOrUsername, token);
   },
 
-  unfollowUser(idOrUsername: string): Promise<void> {
-    return request<void>(
-      `/v1/users/${encodeURIComponent(idOrUsername)}/follow`,
-      {
-        method: "DELETE",
-      },
-    );
+  async unfollowUser(idOrUsername: string): Promise<void> {
+    const { userId, token } = await getCurrentUserAndToken();
+    return supabaseApi.unfollowUser(userId, idOrUsername, token);
   },
 
-  getUserFollowers(idOrUsername: string): Promise<UserProfile[]> {
-    return request<UserProfile[]>(
-      `/v1/users/${encodeURIComponent(idOrUsername)}/followers`,
-    );
+  async getUserFollowers(idOrUsername: string): Promise<UserProfile[]> {
+    const { userId, token } = await getCurrentUserAndToken();
+    return supabaseApi.getUserFollowers(idOrUsername, userId, token);
   },
 
-  getUserFollowing(idOrUsername: string): Promise<UserProfile[]> {
-    return request<UserProfile[]>(
-      `/v1/users/${encodeURIComponent(idOrUsername)}/following`,
-    );
+  async getUserFollowing(idOrUsername: string): Promise<UserProfile[]> {
+    const { userId, token } = await getCurrentUserAndToken();
+    return supabaseApi.getUserFollowing(idOrUsername, userId, token);
   },
 
-  getUserPlaylists(
+  async getUserPlaylists(
     idOrUsername: string,
   ): Promise<{ items: ApiUserPlaylist[] }> {
-    return request<{ items: ApiUserPlaylist[] }>(
-      `/v1/users/${encodeURIComponent(idOrUsername)}/playlists`,
-    );
+    const { token } = await getCurrentUserAndToken();
+    return supabaseApi.getUserPlaylists(idOrUsername, token);
   },
 
-  getUserHistory(
+  async getUserHistory(
     idOrUsername: string,
     cursor?: string,
     limit?: string,
   ): Promise<PlaybackHistoryResponse> {
-    const params = new URLSearchParams();
-    if (cursor) params.set("cursor", cursor);
-    if (limit) params.set("limit", limit);
-    return request<PlaybackHistoryResponse>(
-      `/v1/users/${encodeURIComponent(idOrUsername)}/history?${params}`,
-    );
+    const { token } = await getCurrentUserAndToken();
+    return supabaseApi.getUserHistory(idOrUsername, cursor, limit, token);
   },
 
-  getArtistLeaderboard(
+  async getArtistLeaderboard(
     artistId: string,
     period = "monthly",
     limit = 10,
   ): Promise<LeaderboardResponse> {
-    const params = new URLSearchParams({ period, limit: String(limit) });
-    return request<LeaderboardResponse>(
-      `/v1/leaderboards/artist/${encodeURIComponent(artistId)}?${params}`,
-    );
+    const { token } = await getCurrentUserAndToken();
+    return supabaseApi.getArtistLeaderboard(artistId, period, limit, token);
   },
 
-  getGlobalLeaderboard(
+  async getGlobalLeaderboard(
     period = "weekly",
     limit = 20,
   ): Promise<LeaderboardResponse> {
-    const params = new URLSearchParams({ period, limit: String(limit) });
-    return request<LeaderboardResponse>(`/v1/leaderboards/global?${params}`);
+    const { token } = await getCurrentUserAndToken();
+    return supabaseApi.getGlobalLeaderboard(period, limit, token);
   },
+
   search(q: string, type: SearchType = "all"): Promise<SearchResponse> {
-    const params = new URLSearchParams({ q, type });
-    return clientCatalog.search(q, type, () =>
-      request<SearchResponse>(`/v1/catalog/search?${params}`),
-    );
+    return clientCatalog.search(q, type, () => Promise.resolve({ items: [] }));
   },
 
   getTrack(id: string): Promise<ApiTrackDetails> {
     return clientCatalog.getTrack(id, () =>
-      request<ApiTrackDetails>(`/v1/catalog/tracks/${encodeURIComponent(id)}`),
+      Promise.reject(
+        new ApiError(404, "Track not found in catalog", "TRACK_NOT_FOUND"),
+      ),
     );
   },
 
@@ -852,7 +805,9 @@ export const api = {
 
   getAlbum(id: string): Promise<ApiAlbumDetails> {
     return clientCatalog.getAlbum(id, () =>
-      request<ApiAlbumDetails>(`/v1/catalog/albums/${encodeURIComponent(id)}`),
+      Promise.reject(
+        new ApiError(404, "Album not found in catalog", "ALBUM_NOT_FOUND"),
+      ),
     );
   },
 
@@ -862,153 +817,176 @@ export const api = {
 
   getArtist(id: string): Promise<ApiArtistDetails> {
     return clientCatalog.getArtist(id, () =>
-      request<ApiArtistDetails>(
-        `/v1/catalog/artists/${encodeURIComponent(id)}`,
+      Promise.reject(
+        new ApiError(404, "Artist not found in catalog", "ARTIST_NOT_FOUND"),
       ),
     );
   },
 
   getPlaylist(id: string): Promise<ApiCatalogPlaylistDetails> {
-    return clientCatalog.getPlaylist(id, () =>
-      request<ApiCatalogPlaylistDetails>(
-        `/v1/catalog/playlists/${encodeURIComponent(id)}`,
-      ),
-    );
+    return clientCatalog.getPlaylist(id, async () => {
+      const userPl = await api.getUserPlaylist(id);
+      return userPl as unknown as ApiCatalogPlaylistDetails;
+    });
   },
 
-  listLikedTracks(limit = 100, cursor?: string): Promise<ApiLikedTracksPage> {
-    const params = new URLSearchParams({ limit: String(limit) });
-    if (cursor) params.set("cursor", cursor);
-    return request<ApiLikedTracksPage>(`/v1/me/library/tracks?${params}`);
+  async listLikedTracks(
+    limit = 100,
+    cursor?: string,
+  ): Promise<ApiLikedTracksPage> {
+    const { userId, token } = await getCurrentUserAndToken();
+    return supabaseApi.listLikedTracks(userId, limit, cursor, token);
   },
 
   async likeTrack(id: string): Promise<void> {
     if (isLocalTrackId(id)) throw new Error("Local tracks stay on this device");
-    const track = await clientCatalog.resolveSnapshot(id);
-    return request<void>(`/v1/me/library/tracks/${encodeURIComponent(id)}`, {
-      method: "PUT",
-      ...(track
-        ? { body: JSON.stringify({ track, trackSnapshot: track }) }
-        : {}),
-    });
+    const { userId, token } = await getCurrentUserAndToken();
+    let track = await clientCatalog.resolveSnapshot(id);
+    if (!track) {
+      track = (await linerDb.getTrack(id).catch(() => null)) as any;
+    }
+    return supabaseApi.likeTrack(userId, id, track || { id }, token);
   },
 
-  unlikeTrack(id: string): Promise<void> {
-    return request<void>(`/v1/me/library/tracks/${encodeURIComponent(id)}`, {
-      method: "DELETE",
-    });
+  async unlikeTrack(id: string): Promise<void> {
+    const { userId, token } = await getCurrentUserAndToken();
+    return supabaseApi.unlikeTrack(userId, id, token);
   },
 
-  listSavedCollections(
+  async listSavedCollections(
     type: "albums" | "artists" | "playlists",
   ): Promise<{ items: unknown[] }> {
-    return request<{ items: unknown[] }>(`/v1/me/library/${type}`);
+    const { userId, token } = await getCurrentUserAndToken();
+    return supabaseApi.listSavedCollections(userId, type, token);
   },
 
-  // the catalog lives on the client now, so the server can't look a collection up by
-  // id any more: send what we know (name / title, cover) or the library shows a blank tile
-  saveCollection(
+  async saveCollection(
     type: "albums" | "artists" | "playlists",
     id: string,
     snapshot?: Record<string, unknown>,
   ): Promise<void> {
-    return request<void>(`/v1/me/library/${type}/${encodeURIComponent(id)}`, {
-      method: "PUT",
-      ...(snapshot ? { body: JSON.stringify({ snapshot }) } : {}),
-    });
+    const { userId, token } = await getCurrentUserAndToken();
+    let finalSnapshot = snapshot;
+    if (!finalSnapshot || Object.keys(finalSnapshot).length === 0) {
+      try {
+        if (type === "albums") {
+          const album = await clientCatalog.getAlbum(id, () =>
+            Promise.reject(new Error()),
+          );
+          if (album) {
+            finalSnapshot = {
+              id: album.id,
+              title: album.title,
+              artists: album.artists,
+              cover: album.cover,
+              year: album.year,
+              trackCount: album.tracks?.length || album.trackCount,
+            };
+          }
+        } else if (type === "artists") {
+          const artist = await clientCatalog.getArtist(id, () =>
+            Promise.reject(new Error()),
+          );
+          if (artist) {
+            finalSnapshot = {
+              id: artist.id,
+              name: artist.name,
+              cover: artist.cover,
+            };
+          }
+        } else if (type === "playlists") {
+          const playlist = await api.getPlaylist(id);
+          if (playlist) {
+            finalSnapshot = {
+              id: (playlist as any).playlist?.id || playlist.id,
+              title: (playlist as any).playlist?.title || playlist.title,
+              author:
+                (playlist as any).playlist?.owner?.displayName ||
+                playlist.author,
+              cover: playlist.cover,
+              trackCount:
+                (playlist as any).playlist?.trackCount || playlist.trackCount,
+            };
+          }
+        }
+      } catch {}
+    }
+    return supabaseApi.saveCollection(
+      userId,
+      type,
+      id,
+      finalSnapshot || { id },
+      token,
+    );
   },
 
-  removeCollection(
+  async removeCollection(
     type: "albums" | "artists" | "playlists",
     id: string,
   ): Promise<void> {
-    return request<void>(`/v1/me/library/${type}/${encodeURIComponent(id)}`, {
-      method: "DELETE",
-    });
+    const { userId, token } = await getCurrentUserAndToken();
+    return supabaseApi.removeCollection(userId, type, id, token);
   },
 
-  listPlaylists(): Promise<{ items: ApiUserPlaylist[] }> {
-    return request<{ items: ApiUserPlaylist[] }>("/v1/me/playlists");
+  async listPlaylists(): Promise<{ items: ApiUserPlaylist[] }> {
+    const { userId, token } = await getCurrentUserAndToken();
+    return supabaseApi.listPlaylists(userId, token);
   },
 
   async readUserPlaylist(
     id: string,
     options: { limit?: number; etag?: string } = {},
   ): Promise<UserPlaylistRead> {
-    const params = new URLSearchParams({ compact: "true" });
-    if (options.limit) params.set("limit", String(options.limit));
-    let status = 200;
-    let etag: string | undefined;
-    const body = await executeRequest<
-      | {
-          playlist: ApiUserPlaylist;
-          items: ApiUserPlaylistItem[];
-          trackCount?: number;
-          durationMs?: number;
-          partial?: boolean;
-        }
-      | undefined
-    >(
-      `/v1/me/playlists/${encodeURIComponent(id)}?${params}`,
-      options.etag ? { headers: { "If-None-Match": options.etag } } : undefined,
-      true,
-      DEFAULT_TIMEOUT_MS,
-      (res) => {
-        status = res.status;
-        etag = res.headers?.get?.("etag") ?? undefined;
-      },
-    );
-    if (status === 304 || !body) return { notModified: true };
+    const { token } = await getCurrentUserAndToken();
+    const data = await supabaseApi.getUserPlaylist(id, token);
+    const etag = `rev-${data.playlist.revision}`;
+    if (options.etag && options.etag === etag) {
+      return { notModified: true };
+    }
+    const items = options.limit
+      ? data.items.slice(0, options.limit)
+      : data.items;
     return {
       notModified: false,
       etag,
-      partial: body.partial === true,
-      trackCount: body.trackCount ?? body.items.length,
-      durationMs:
-        body.durationMs ??
-        body.items.reduce(
-          (sum, item) => sum + (item.track?.durationMs || 0),
-          0,
-        ),
-      playlist: body.playlist,
-      items: body.items,
+      partial: options.limit ? options.limit < data.items.length : false,
+      trackCount: data.playlist.trackCount ?? data.items.length,
+      durationMs: data.items.reduce(
+        (sum, item) => sum + (item.track?.durationMs || 0),
+        0,
+      ),
+      playlist: data.playlist,
+      items,
     };
   },
 
-  getUserPlaylist(
+  async getUserPlaylist(
     id: string,
   ): Promise<{ playlist: ApiUserPlaylist; items: ApiUserPlaylistItem[] }> {
-    return request<{
-      playlist: ApiUserPlaylist;
-      items: ApiUserPlaylistItem[];
-    }>(`/v1/me/playlists/${encodeURIComponent(id)}`);
+    const { token } = await getCurrentUserAndToken();
+    return supabaseApi.getUserPlaylist(id, token);
   },
 
-  createPlaylist(input: {
+  async createPlaylist(input: {
     title: string;
     description?: string;
     isPublic?: boolean;
   }): Promise<ApiUserPlaylist> {
-    return request<ApiUserPlaylist>("/v1/me/playlists", {
-      method: "POST",
-      body: JSON.stringify(input),
-    });
+    const { userId, token } = await getCurrentUserAndToken();
+    return supabaseApi.createPlaylist(userId, input, token);
   },
 
-  updatePlaylist(
+  async updatePlaylist(
     id: string,
     input: { title?: string; description?: string | null; isPublic?: boolean },
   ): Promise<ApiUserPlaylist> {
-    return request<ApiUserPlaylist>(
-      `/v1/me/playlists/${encodeURIComponent(id)}`,
-      { method: "PATCH", body: JSON.stringify(input) },
-    );
+    const { userId, token } = await getCurrentUserAndToken();
+    return supabaseApi.updatePlaylist(userId, id, input, token);
   },
 
-  deletePlaylist(id: string): Promise<void> {
-    return request<void>(`/v1/me/playlists/${encodeURIComponent(id)}`, {
-      method: "DELETE",
-    });
+  async deletePlaylist(id: string): Promise<void> {
+    const { userId, token } = await getCurrentUserAndToken();
+    return supabaseApi.deletePlaylist(userId, id, token);
   },
 
   async addPlaylistTrack(
@@ -1018,19 +996,20 @@ export const api = {
   ): Promise<ApiUserPlaylistItem> {
     if (isLocalTrackId(trackId))
       throw new Error("Local tracks stay on this device");
-    const track = snapshot ?? (await clientCatalog.resolveSnapshot(trackId));
-    return request<ApiUserPlaylistItem>(
-      `/v1/me/playlists/${encodeURIComponent(playlistId)}/tracks/${encodeURIComponent(trackId)}`,
-      {
-        method: "POST",
-        ...(track
-          ? { body: JSON.stringify({ track, trackSnapshot: track }) }
-          : {}),
-      },
+    const { userId, token } = await getCurrentUserAndToken();
+    const track =
+      snapshot ??
+      (await clientCatalog.resolveSnapshot(trackId)) ?? { id: trackId };
+    return supabaseApi.addPlaylistTrack(
+      userId,
+      playlistId,
+      trackId,
+      track,
+      token,
     );
   },
 
-  addPlaylistTrackSnapshots(
+  async addPlaylistTrackSnapshots(
     playlistId: string,
     tracks: ApiTrackBase[],
   ): Promise<{
@@ -1038,40 +1017,37 @@ export const api = {
     added: number;
     rejected: number;
   }> {
-    return request<{
-      items: ApiUserPlaylistItem[];
-      added: number;
-      rejected: number;
-    }>(
-      `/v1/me/playlists/${encodeURIComponent(playlistId)}/tracks`,
-      { method: "POST", body: JSON.stringify({ tracks }) },
-      true,
-      60_000,
+    const { userId, token } = await getCurrentUserAndToken();
+    return supabaseApi.addPlaylistTrackSnapshots(
+      userId,
+      playlistId,
+      tracks,
+      token,
     );
   },
 
-  removePlaylistItem(playlistId: string, itemId: string): Promise<void> {
-    return request<void>(
-      `/v1/me/playlists/${encodeURIComponent(playlistId)}/items/${encodeURIComponent(itemId)}`,
-      { method: "DELETE" },
-    );
+  async removePlaylistItem(
+    playlistId: string,
+    itemId: string,
+  ): Promise<void> {
+    const { userId, token } = await getCurrentUserAndToken();
+    return supabaseApi.removePlaylistItem(userId, playlistId, itemId, token);
   },
 
-  movePlaylistItem(
+  async movePlaylistItem(
     playlistId: string,
     itemId: string,
     beforeItemId: string | null,
     revision: number,
   ): Promise<{ playlist: ApiUserPlaylist; items: ApiUserPlaylistItem[] }> {
-    return request<{
-      playlist: ApiUserPlaylist;
-      items: ApiUserPlaylistItem[];
-    }>(
-      `/v1/me/playlists/${encodeURIComponent(playlistId)}/items/${encodeURIComponent(itemId)}/move`,
-      {
-        method: "POST",
-        body: JSON.stringify({ beforeItemId, revision }),
-      },
+    const { userId, token } = await getCurrentUserAndToken();
+    return supabaseApi.movePlaylistItem(
+      userId,
+      playlistId,
+      itemId,
+      beforeItemId,
+      revision,
+      token,
     );
   },
 
@@ -1121,204 +1097,354 @@ export const api = {
       .then(({ finalized }) => ({ denied: "all" as const, finalized }));
   },
 
-  async searchLyrics(
+  searchLyrics(
     hint: { title: string; artist: string; durationMs?: number },
     signal?: AbortSignal,
   ): Promise<LyricsSearchResult | null> {
-    const params = new URLSearchParams({
-      title: hint.title.trim(),
-      artist: hint.artist.trim(),
-      ...(hint.durationMs && hint.durationMs > 0
-        ? { durationMs: String(Math.round(hint.durationMs)) }
-        : {}),
-    });
-    try {
-      return await request<LyricsSearchResult>(
-        `/v1/me/lyrics/search?${params.toString()}`,
-        { signal },
-      );
-    } catch (err) {
-      if (
-        err instanceof ApiError &&
-        err.status === 404 &&
-        err.code === "LYRICS_NOT_FOUND"
-      ) {
-        return null;
-      }
-      throw err;
-    }
+    return searchLyricsWithLrclib(hint, signal);
   },
 
-  async *streamLyrics(
+  streamLyrics(
     id: string,
     signal?: AbortSignal,
     hint?: { title: string; artist: string; durationMs?: number },
   ): AsyncGenerator<LyricsStreamEvent> {
-    const hintParams =
-      hint?.title.trim() && hint.artist.trim()
-        ? new URLSearchParams({
-            title: hint.title.trim(),
-            artist: hint.artist.trim(),
-            ...(hint.durationMs && hint.durationMs > 0
-              ? { durationMs: String(Math.round(hint.durationMs)) }
-              : {}),
-          }).toString()
-        : "";
-    const path = `/v1/tracks/${encodeURIComponent(id)}/lyrics${hintParams ? `?${hintParams}` : ""}`;
-    const signedHeaders = await signApiRequest("GET", path);
-    const accessToken = await getValidAccessToken();
-    const requestId =
-      typeof crypto !== "undefined" && crypto.randomUUID
-        ? crypto.randomUUID()
-        : `req_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    return streamLyricsWithLrclib(id, signal, hint);
+  },
 
-    const correlationHeaders: Record<string, string> = {
-      "x-request-id": requestId,
-      "x-client-version": CLIENT_VERSION,
-      "x-platform": getPlatform(),
-      "x-session-id": id,
-    };
-
-    let res: Response;
-    const connect = new AbortController();
-    const connectTimer = setTimeout(
-      () => connect.abort(),
-      LYRICS_CONNECT_TIMEOUT_MS,
+  async recordPlaybackEvent(
+    payload: RecordPlaybackEventRequest,
+  ): Promise<void> {
+    const { userId, token } = await getCurrentUserAndToken();
+    let trackSnapshot = payload.trackSnapshot;
+    if (!trackSnapshot) {
+      trackSnapshot = (await linerDb.getTrack(payload.trackId).catch(() => null)) as any;
+      if (!trackSnapshot) {
+        trackSnapshot = (await clientCatalog
+          .resolveSnapshot(payload.trackId)
+          .catch(() => null)) as any;
+      }
+    }
+    return supabaseApi.recordPlaybackEvent(
+      userId,
+      { ...payload, trackSnapshot },
+      token,
     );
-    try {
-      res = await fetch(`${getApiBaseUrl()}${path}`, {
-        signal: signal
-          ? AbortSignal.any([signal, connect.signal])
-          : connect.signal,
-        headers: {
-          // a known instrumental comes back as plain json instead of a stream
-          Accept: "application/json, text/event-stream",
-          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-          ...correlationHeaders,
-          ...signedHeaders,
-        },
-      });
-    } catch (fetchErr: any) {
-      if (signal?.aborted) throw fetchErr;
-      if (connect.signal.aborted)
-        throw new ApiError(0, "Lyrics request timed out.", "TIMEOUT_ERROR");
-      throw fetchErr;
-    } finally {
-      clearTimeout(connectTimer);
-    }
-
-    const lyricsDateHeader = res.headers?.get?.("date");
-    if (lyricsDateHeader) {
-      syncServerTime(lyricsDateHeader);
-    }
-
-    if (!res.ok || !res.body) {
-      const respReqId = res.headers?.get?.("x-request-id") || requestId;
-      throw new ApiError(res.status, res.statusText, undefined, respReqId);
-    }
-
-    if (res.headers.get("content-type")?.includes("application/json")) {
-      const body = (await res.json()) as { instrumental?: boolean };
-      yield body.instrumental
-        ? {
-            type: "done",
-            cached: true,
-            status: "not_found",
-            instrumental: true,
-          }
-        : { type: "done", cached: true, status: "not_found" };
-      return;
-    }
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    const flushEvent = (): LyricsStreamEvent | null => {
-      const sep = buffer.indexOf("\n\n");
-      if (sep === -1) return null;
-      const rawEvent = buffer.slice(0, sep);
-      buffer = buffer.slice(sep + 2);
-
-      const dataLines: string[] = [];
-      for (const line of rawEvent.split("\n")) {
-        if (line.startsWith("data:")) {
-          dataLines.push(line.slice(5).trim());
-        }
-      }
-
-      if (dataLines.length === 0) return null;
-      try {
-        return JSON.parse(dataLines.join("\n")) as LyricsStreamEvent;
-      } catch {
-        return null;
-      }
-    };
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        let event = flushEvent();
-        while (event) {
-          yield event;
-          event = flushEvent();
-        }
-      }
-
-      buffer += decoder.decode();
-      let event = flushEvent();
-      while (event) {
-        yield event;
-        event = flushEvent();
-      }
-    } finally {
-      reader.releaseLock();
-    }
   },
 
-  recordPlaybackEvent(payload: RecordPlaybackEventRequest): Promise<void> {
-    return request<void>("/v1/me/playback/events", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+  async getHistory(
+    cursor?: string,
+    limit = 30,
+  ): Promise<PlaybackHistoryResponse> {
+    const { userId, token } = await getCurrentUserAndToken();
+    return supabaseApi.getHistory(userId, cursor, limit, token);
   },
 
-  getHistory(cursor?: string, limit = 30): Promise<PlaybackHistoryResponse> {
-    const params = new URLSearchParams({ limit: String(limit) });
-    if (cursor) params.set("cursor", cursor);
-    return request<PlaybackHistoryResponse>(`/v1/me/history?${params}`);
-  },
-
-  getPopularTracks(
+  async getPopularTracks(
     window: PopularTimeWindow = "7d",
     limit = 50,
   ): Promise<PopularTracksResponse> {
-    const params = new URLSearchParams({ window, limit: String(limit) });
-    return request<PopularTracksResponse>(`/v1/explore/popular?${params}`);
+    const history = await api.getHistory(undefined, 50).catch(() => ({ items: [] }));
+    const catalogSearch = await clientCatalog
+      .search("top hits", "track", () => Promise.resolve({ items: [] }))
+      .catch(() => ({ items: [] }));
+
+    const trackMap = new Map<string, { track: Track; playCount: number }>();
+
+    for (const h of history.items) {
+      if (h.track?.id) {
+        const contractT = toContractTrack(h.track);
+        const existing = trackMap.get(contractT.id) || {
+          track: contractT,
+          playCount: 0,
+        };
+        existing.playCount += 1;
+        trackMap.set(contractT.id, existing);
+      }
+    }
+
+    for (const item of catalogSearch.items) {
+      if (item && "id" in item && !trackMap.has(item.id)) {
+        const contractT = toContractTrack(item as any);
+        trackMap.set(contractT.id, { track: contractT, playCount: 1 });
+      }
+    }
+
+    const sorted = Array.from(trackMap.values())
+      .sort((a, b) => b.playCount - a.playCount)
+      .slice(0, limit);
+
+    return {
+      window,
+      generatedAt: new Date().toISOString(),
+      items: sorted.map((entry, idx) => ({
+        rank: idx + 1,
+        track: entry.track,
+        playCount: entry.playCount,
+        uniqueListeners: entry.playCount,
+        score: entry.playCount * 10,
+      })),
+    };
   },
 
-  getPopularAlbums(
+  async getPopularAlbums(
     window: PopularTimeWindow = "7d",
     limit = 20,
   ): Promise<PopularAlbumsResponse> {
-    const params = new URLSearchParams({ window, limit: String(limit) });
-    return request<PopularAlbumsResponse>(
-      `/v1/explore/popular/albums?${params}`,
-    );
+    const searchRes = await clientCatalog
+      .search("popular albums", "album", () => Promise.resolve({ items: [] }))
+      .catch(() => ({ items: [] }));
+    const savedRes = await api
+      .listSavedCollections("albums")
+      .catch(() => ({ items: [] }));
+
+    const albumMap = new Map<string, any>();
+
+    for (const entry of savedRes.items as any[]) {
+      const alb = entry.album;
+      if (alb?.id) {
+        albumMap.set(alb.id, alb);
+      }
+    }
+
+    for (const it of searchRes.items) {
+      if (it && "id" in it && !albumMap.has(it.id)) {
+        albumMap.set(it.id, it);
+      }
+    }
+
+    const items = Array.from(albumMap.values())
+      .slice(0, limit)
+      .map((a) => {
+        const trackCount =
+          a.trackCount && a.trackCount >= 5 ? a.trackCount : 10;
+        const artistName =
+          a.author ||
+          (Array.isArray(a.artists)
+            ? a.artists
+                .map((art: any) =>
+                  typeof art === "string" ? art : art.name,
+                )
+                .join(", ")
+            : typeof a.artist === "string"
+              ? a.artist
+              : "Popular Artist");
+
+        return {
+          id: a.id,
+          title: a.title || "Album",
+          artist: artistName,
+          artists: Array.isArray(a.artists)
+            ? a.artists
+            : [{ id: "artist_0", name: artistName }],
+          coverUrl: a.cover?.url || a.coverUrl || null,
+          year: a.year || new Date().getFullYear(),
+          playCount: 100,
+          uniqueListeners: 50,
+          trackCount,
+          score: 100,
+        };
+      });
+
+    return {
+      window,
+      items,
+    };
   },
 
-  getMostSaved(
+  async getMostSaved(
     type: MostSavedType = "all",
     limit = 20,
   ): Promise<MostSavedResponse> {
-    const params = new URLSearchParams({ type, limit: String(limit) });
-    return request<MostSavedResponse>(`/v1/explore/most-saved?${params}`);
+    const [savedAlbums, savedPlaylists] = await Promise.all([
+      type === "playlist"
+        ? Promise.resolve({ items: [] })
+        : api.listSavedCollections("albums").catch(() => ({ items: [] })),
+      type === "album"
+        ? Promise.resolve({ items: [] })
+        : api.listSavedCollections("playlists").catch(() => ({ items: [] })),
+    ]);
+
+    const entries: any[] = [];
+
+    for (const item of savedAlbums.items as any[]) {
+      const alb = item.album;
+      if (alb?.id) {
+        entries.push({
+          type: "album" as const,
+          id: alb.id,
+          title: alb.title || "Album",
+          subtitle: alb.author || "Album",
+          artists: alb.artists,
+          coverUrl: alb.cover?.url || alb.coverUrl || null,
+          saves: 10,
+        });
+      }
+    }
+
+    for (const item of savedPlaylists.items as any[]) {
+      const pl = item.playlist;
+      if (pl?.id) {
+        entries.push({
+          type: "playlist" as const,
+          id: pl.id,
+          title: pl.title || "Playlist",
+          subtitle: pl.author || "Playlist",
+          coverUrl: pl.cover?.url || pl.coverUrl || null,
+          saves: 10,
+        });
+      }
+    }
+
+    if (entries.length < limit) {
+      const searchRes = await clientCatalog
+        .search("popular playlists", "playlist", () =>
+          Promise.resolve({ items: [] }),
+        )
+        .catch(() => ({ items: [] }));
+      for (const it of searchRes.items) {
+        if (it && "id" in it && !entries.some((e) => e.id === it.id)) {
+          entries.push({
+            type: "playlist" as const,
+            id: it.id,
+            title: (it as any).title || "Playlist",
+            subtitle: (it as any).author || "Playlist",
+            coverUrl: (it as any).cover?.url || (it as any).coverUrl || null,
+            saves: 5,
+          });
+          if (entries.length >= limit) break;
+        }
+      }
+    }
+
+    return {
+      type,
+      items: entries.slice(0, limit),
+    };
   },
 
-  getDailyMixes(): Promise<DailyMixesResponse> {
-    return request<DailyMixesResponse>("/v1/me/recommendations/daily-mixes");
+  async getDailyMixes(): Promise<DailyMixesResponse> {
+    const { userId } = await getCurrentUserAndToken();
+    const now = Date.now();
+    if (
+      cachedDailyMixes &&
+      cachedDailyMixes.userId === userId &&
+      now - cachedDailyMixes.timestamp < DAILY_MIX_CACHE_TTL_MS
+    ) {
+      return cachedDailyMixes.response;
+    }
+
+    const historyRes = await api
+      .getHistory(undefined, 20)
+      .catch(() => ({ items: [] }));
+    const likesRes = await api
+      .listLikedTracks(20)
+      .catch(() => ({ items: [] }));
+
+    const seedCandidates: Track[] = [];
+    const seenTrackIds = new Set<string>();
+
+    for (const h of historyRes.items) {
+      if (h.track?.id && !seenTrackIds.has(h.track.id)) {
+        seenTrackIds.add(h.track.id);
+        seedCandidates.push(toContractTrack(h.track));
+      }
+    }
+    for (const l of likesRes.items) {
+      if (l.track?.id && !seenTrackIds.has(l.track.id)) {
+        seenTrackIds.add(l.track.id);
+        seedCandidates.push(toContractTrack(l.track));
+      }
+    }
+
+    if (seedCandidates.length < 4) {
+      const fallbackQueries = [
+        "Chill Hits",
+        "Top Global Hits",
+        "Electronic Vibes",
+        "Acoustic Pop",
+      ];
+      const searchPromises = fallbackQueries.map((q) =>
+        clientCatalog
+          .search(q, "track", () => Promise.resolve({ items: [] }))
+          .catch(() => ({ items: [] })),
+      );
+      const searchResults = await Promise.all(searchPromises);
+      for (const res of searchResults) {
+        for (const item of res.items) {
+          if (item && "id" in item && !seenTrackIds.has(item.id)) {
+            seenTrackIds.add(item.id);
+            seedCandidates.push(toContractTrack(item as any));
+            break;
+          }
+        }
+      }
+    }
+
+    const seeds = seedCandidates.slice(0, 4);
+    if (seeds.length === 0) {
+      const searchRes = await clientCatalog
+        .search("Popular", "track", () => Promise.resolve({ items: [] }))
+        .catch(() => ({ items: [] }));
+      for (const item of searchRes.items) {
+        if (item && "id" in item) {
+          seeds.push(toContractTrack(item as any));
+          if (seeds.length >= 4) break;
+        }
+      }
+    }
+
+    const mixPromises = seeds.map(async (seed, idx) => {
+      const radio = await clientCatalog
+        .getRadio(seed.id, 25)
+        .catch(() => ({ items: [] }));
+      const tracks: Track[] = (radio.items || [])
+        .filter((t) => t && t.id)
+        .map((t) => toContractTrack(t as any));
+
+      if (tracks.length === 0 && seed) {
+        tracks.push(seed);
+      }
+
+      const clusterArtists: string[] = Array.from(
+        new Set(
+          tracks
+            .flatMap((t) => t.artists.map((a) => a.name))
+            .filter(Boolean),
+        ),
+      ).slice(0, 5);
+
+      const coverUrl = seed.cover?.url || tracks[0]?.cover?.url || "";
+      const cover: Cover | undefined = coverUrl
+        ? { url: coverUrl, width: 500, height: 500 }
+        : undefined;
+
+      return {
+        id: `daily-mix-${idx + 1}`,
+        title: `Daily Mix ${idx + 1}`,
+        description:
+          clusterArtists.length > 0
+            ? clusterArtists.join(", ")
+            : "Personalized daily playlist",
+        clusterArtists,
+        cover,
+        trackCount: tracks.length,
+        tracks,
+      };
+    });
+
+    const mixItems = await Promise.all(mixPromises);
+    const response: DailyMixesResponse = {
+      items: mixItems,
+      generatedAt: new Date().toISOString(),
+    };
+
+    cachedDailyMixes = {
+      timestamp: now,
+      userId,
+      response,
+    };
+
+    return response;
   },
 };

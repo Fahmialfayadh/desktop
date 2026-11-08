@@ -55,6 +55,8 @@ function DiscordSync() {
 
 export default function App() {
   useWindowDrag();
+  const isElectron =
+    typeof window !== "undefined" && Boolean(window.linerElectron);
 
   return (
     <HashRouter>
@@ -69,9 +71,9 @@ export default function App() {
         <ThemeSync />
         <AppIconSync />
         <PresenceSync />
-        <TouchBarSync />
-        <OverlaySync />
-        <DiscordSync />
+        {isElectron && <TouchBarSync />}
+        {isElectron && <OverlaySync />}
+        {isElectron && <DiscordSync />}
         <AppleEmojiProvider>
           <I18nProvider>
             <ToastProvider>

@@ -17,6 +17,7 @@ import ArtistLink from "@/features/artist/ui/ArtistLink";
 import CoverImage from "@/features/covers/ui/CoverImage";
 import ExplicitBadge from "@/shared/ui/ExplicitBadge";
 import { useTranslation } from "@/languages";
+import { More2Fill } from "@mingcute/react";
 import SectionHeading from "./SectionHeading";
 
 export interface PopularTracksSectionProps {
@@ -180,7 +181,19 @@ function TrackCard({
 
       {menuItems.length > 0 && (
         <DropdownMenu
-          trigger={<span />}
+          trigger={
+            <button
+              type="button"
+              aria-label={t("common.more_options") || "More options"}
+              className="absolute top-2 right-2 z-10 flex h-[32px] w-[32px] items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-md border-0 p-0 cursor-pointer opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity active:scale-95 touch-manipulation"
+              onClick={(e) => {
+                e.stopPropagation();
+                setMenuOpen(!menuOpen);
+              }}
+            >
+              <More2Fill size={18} />
+            </button>
+          }
           items={menuItems}
           open={menuOpen}
           onOpenChange={handleMenuOpenChange}
@@ -200,6 +213,7 @@ function AlbumCard({
   index: number;
   showRanks?: boolean;
 }) {
+  const { t } = useTranslation();
   const [imageLoaded, setImageLoaded] = useState(false);
   const navigate = useStableNavigate();
 
@@ -288,7 +302,19 @@ function AlbumCard({
 
       {menuItems.length > 0 && (
         <DropdownMenu
-          trigger={<span />}
+          trigger={
+            <button
+              type="button"
+              aria-label={t("common.more_options") || "More options"}
+              className="absolute top-2 right-2 z-10 flex h-[32px] w-[32px] items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-md border-0 p-0 cursor-pointer opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity active:scale-95 touch-manipulation"
+              onClick={(e) => {
+                e.stopPropagation();
+                setMenuOpen(!menuOpen);
+              }}
+            >
+              <More2Fill size={18} />
+            </button>
+          }
           items={menuItems}
           open={menuOpen}
           onOpenChange={handleMenuOpenChange}
@@ -308,6 +334,7 @@ function PlaylistCard({
   index: number;
   showRanks?: boolean;
 }) {
+  const { t } = useTranslation();
   const [imageLoaded, setImageLoaded] = useState(false);
   const navigate = useStableNavigate();
 
@@ -389,7 +416,19 @@ function PlaylistCard({
 
       {menuItems.length > 0 && (
         <DropdownMenu
-          trigger={<span />}
+          trigger={
+            <button
+              type="button"
+              aria-label={t("common.more_options") || "More options"}
+              className="absolute top-2 right-2 z-10 flex h-[32px] w-[32px] items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-md border-0 p-0 cursor-pointer opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity active:scale-95 touch-manipulation"
+              onClick={(e) => {
+                e.stopPropagation();
+                setMenuOpen(!menuOpen);
+              }}
+            >
+              <More2Fill size={18} />
+            </button>
+          }
           items={menuItems}
           open={menuOpen}
           onOpenChange={handleMenuOpenChange}

@@ -29,6 +29,42 @@ export interface DropdownMenuProps {
   align?: "start" | "end";
 }
 
+function useIsMobile(): boolean {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== "undefined" && typeof window.innerWidth === "number"
+      ? window.innerWidth < 768
+      : false,
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function")
+      return;
+    const media = window.matchMedia("(max-width: 767px)");
+    if (!media) return;
+    const onChange = () => setIsMobile(media.matches);
+    setIsMobile(media.matches);
+    if (typeof media.addEventListener === "function") {
+      media.addEventListener("change", onChange);
+      return () => media.removeEventListener("change", onChange);
+    }
+    if (
+      typeof (media as unknown as { addListener?: (fn: () => void) => void })
+        .addListener === "function"
+    ) {
+      (media as unknown as { addListener: (fn: () => void) => void }).addListener(
+        onChange,
+      );
+      return () => {
+        (
+          media as unknown as { removeListener?: (fn: () => void) => void }
+        ).removeListener?.(onChange);
+      };
+    }
+  }, []);
+
+  return isMobile;
+}
+
 function useFixedStyle(
   menuRef: RefObject<HTMLDivElement | null>,
   isFixed: boolean,
@@ -85,6 +121,7 @@ export default function DropdownMenu({
   side = "bottom",
   align = "start",
 }: DropdownMenuProps) {
+  const isMobile = useIsMobile();
   const [internalOpen, setInternalOpen] = useState(false);
   const open = controlledOpen ?? internalOpen;
   const setOpen = onOpenChange ?? setInternalOpen;
@@ -141,7 +178,7 @@ export default function DropdownMenu({
     };
   }, [open, setOpen]);
 
-  const menuContent = (
+  const desktopMenuContent = (
     <AnimatePresence>
       {open && (
         <motion.div
@@ -202,21 +239,94 @@ export default function DropdownMenu({
     </AnimatePresence>
   );
 
+  const mobileBottomSheetContent = (
+    <AnimatePresence>
+      {open && (
+        <>
+          <motion.div
+            key="dropdown-sheet-scrim"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 z-[99998] bg-black/50 backdrop-blur-[2px]"
+            onClick={(e) => {
+              e.stopPropagation();
+              setOpen(false);
+            }}
+          />
+          <motion.div
+            key="dropdown-bottom-sheet"
+            ref={menuRef}
+            data-dropdown-menu="true"
+            initial={{ y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="fixed inset-x-0 bottom-0 z-[99999] max-h-[78dvh] overflow-y-auto overscroll-contain rounded-t-[20px] bg-bg-panel/95 [[data-cover-glow=on]_&]:bg-black/75 backdrop-blur-2xl backdrop-saturate-150 border-t border-border-primary/50 px-2.5 pt-2.5 pb-[calc(14px+var(--safe-bottom,0px))]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-9 h-1 rounded-full bg-border-alpha-14 mx-auto mb-2" />
+            <div className="flex flex-col gap-1">
+              {items.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  disabled={item.disabled}
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    setOpen(false);
+                    await item.onClick();
+                  }}
+                  className={`group flex w-full min-h-[46px] items-center gap-3 rounded-[12px] px-3.5 text-[14.5px] font-normal transition-colors border-none bg-transparent text-left cursor-pointer select-none outline-none active:bg-fill ${
+                    item.danger
+                      ? "text-red-400 active:bg-red-500/10 active:text-red-400"
+                      : "text-text-primary"
+                  } ${
+                    item.active ? "bg-fill" : ""
+                  } disabled:pointer-events-none disabled:opacity-40`}
+                  aria-current={item.active ? "true" : undefined}
+                >
+                  {item.icon && (
+                    <span
+                      className={`shrink-0 flex items-center justify-center text-[18px] ${
+                        item.danger
+                          ? "text-red-400"
+                          : "text-text-secondary group-hover:text-text-primary"
+                      } transition-colors`}
+                    >
+                      {item.icon}
+                    </span>
+                  )}
+                  <span className="truncate flex-1">{item.label}</span>
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+
   return (
     <div
       ref={containerRef}
       className="relative inline-flex"
       onClick={(e) => {
-        if (!position) {
+        if (!position || isMobile) {
           e.stopPropagation();
           setOpen(!open);
         }
       }}
     >
       {trigger}
-      {isFixed && typeof document !== "undefined"
-        ? createPortal(menuContent, document.body)
-        : menuContent}
+      {isMobile
+        ? typeof document !== "undefined"
+          ? createPortal(mobileBottomSheetContent, document.body)
+          : null
+        : isFixed && typeof document !== "undefined"
+          ? createPortal(desktopMenuContent, document.body)
+          : desktopMenuContent}
     </div>
   );
 }

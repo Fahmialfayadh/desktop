@@ -3,6 +3,7 @@ import type {
   SavedTrackRecord,
 } from "../../../../electron/saved-tracks/types";
 import type { Track } from "@/shared/types";
+import { webLocalTracks } from "@/shared/storage/webLocalTracks";
 
 export type {
   SavedLibraryUsage,
@@ -29,10 +30,18 @@ export function isSavedTrack(trackId: string | null | undefined): boolean {
 }
 
 export function savedAudioUrl(record: SavedTrackRecord): string {
+  if (typeof window !== "undefined" && !window.linerElectron) {
+    const webUrl = webLocalTracks.getSavedAudioUrl(record.trackId);
+    if (webUrl) return webUrl;
+  }
   return `liner-local://saved-audio/${record.key}`;
 }
 
 export function savedCoverUrl(record: SavedTrackRecord): string {
+  if (typeof window !== "undefined" && !window.linerElectron) {
+    const webUrl = webLocalTracks.getSavedCoverUrl(record.trackId);
+    if (webUrl) return webUrl;
+  }
   return `liner-local://saved-cover/${record.key}`;
 }
 
@@ -73,6 +82,12 @@ export async function readSavedLyrics<T>(
   isValid: (value: unknown) => value is T,
 ): Promise<T | null> {
   if (!isSavedTrack(trackId)) return null;
+
+  if (typeof window !== "undefined" && !window.linerElectron) {
+    const stored = await webLocalTracks.getSavedLyrics(trackId);
+    return isValid(stored) ? stored : null;
+  }
+
   const stored = await window.linerElectron
     ?.savedTracksGetLyrics(trackId)
     .catch(() => null);

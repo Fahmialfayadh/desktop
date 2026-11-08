@@ -5,7 +5,28 @@ export {
   ApiError,
   resolveApiErrorMessage,
 } from "./api";
-export { DEFAULT_PRIMARY_API, getApiBaseUrl } from "./baseUrl";
+export {
+  DEFAULT_PRIMARY_API,
+  getApiBaseUrl,
+  getStreamGatewayUrl,
+  buildDirectMp3DownloadUrl,
+  getSupabaseUrl,
+  getSupabaseAnonKey,
+  isSupabaseConfigured,
+} from "./baseUrl";
+export {
+  installWebCorsFetchProxy,
+  uninstallWebCorsFetchProxy,
+  shouldProxyRequest,
+  buildProxiedUrl,
+} from "./webCorsProxy";
+export {
+  searchLyricsWithLrclib,
+  streamLyricsWithLrclib,
+} from "./lrclibLyrics";
+export {
+  supabaseApi,
+} from "../supabase";
 export {
   HumanCheckCancelledError,
   humanCheckOrigin,

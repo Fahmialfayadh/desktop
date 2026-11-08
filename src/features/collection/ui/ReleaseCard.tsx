@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { useCallback, useState } from "react";
+import { More2Fill } from "@mingcute/react";
 import ExplicitBadge from "@/shared/ui/ExplicitBadge";
 import CoverImage from "@/features/covers/ui/CoverImage";
 import { useSongMenuItems } from "@/features/player/hooks/useSongMenuItems";
@@ -57,7 +58,7 @@ export default function ReleaseCard({
   }, []);
 
   return (
-    <div onContextMenu={handleContextMenu} className="relative">
+    <div onContextMenu={handleContextMenu} className="relative group/card">
       <Link
         to={`/collection?type=release&id=${encodeURIComponent(id)}`}
         className={`group flex flex-col gap-[8px] no-underline cursor-pointer ${className}`}
@@ -93,13 +94,27 @@ export default function ReleaseCard({
         </div>
       </Link>
       {menuItems.length > 0 && (
-        <DropdownMenu
-          trigger={<span />}
-          items={menuItems}
-          open={menuOpen}
-          onOpenChange={handleMenuOpenChange}
-          position={menuPosition}
-        />
+        <div className="absolute top-2 right-2 z-10 opacity-100 md:opacity-0 md:group-hover/card:opacity-100 transition-opacity">
+          <DropdownMenu
+            trigger={
+              <button
+                type="button"
+                aria-label="More options"
+                className="flex h-[32px] w-[32px] items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-md border-0 p-0 cursor-pointer active:scale-95 touch-manipulation"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMenuOpen(!menuOpen);
+                }}
+              >
+                <More2Fill size={18} />
+              </button>
+            }
+            items={menuItems}
+            open={menuOpen}
+            onOpenChange={handleMenuOpenChange}
+            position={menuPosition}
+          />
+        </div>
       )}
     </div>
   );

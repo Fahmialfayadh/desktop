@@ -7,6 +7,8 @@ import {
   type LocalTrackRecord,
 } from "@/shared/media/local";
 import { playerEngine } from "@/features/player/engine/playerEngine";
+import { webLocalTracks, pickAudioFilesFromBrowser } from "@/shared/storage/webLocalTracks";
+import type { Track } from "@/shared/types";
 
 async function releasePlayingTrack(fileIds: string[] | "all") {
   const current = playerEngine.getSnapshot().currentTrack?.id;
@@ -15,7 +17,6 @@ async function releasePlayingTrack(fileIds: string[] | "all") {
     fileIds === "all" || fileIds.map(toLocalTrackId).includes(current);
   if (removed) await playerEngine.stopAndClear().catch(() => {});
 }
-import type { Track } from "@/shared/types";
 
 type LoadState = "idle" | "loading" | "ready" | "unavailable";
 
@@ -26,6 +27,7 @@ interface LocalLibraryState {
   importing: boolean;
   load: () => Promise<void>;
   importPaths: (paths: string[]) => Promise<LocalImportResult | null>;
+  importFiles: (files: File[]) => Promise<LocalImportResult | null>;
   pickFiles: () => Promise<LocalImportResult | null>;
   remove: (fileIds: string[]) => Promise<void>;
   removeAll: () => Promise<number>;
@@ -64,7 +66,14 @@ export const useLocalLibraryStore = create<LocalLibraryState>((set, get) => {
     load: async () => {
       const bridge = window.linerElectron;
       if (!bridge) {
-        set({ loadState: "unavailable" });
+        if (get().loadState === "loading") return;
+        set({ loadState: "loading" });
+        try {
+          const records = await webLocalTracks.listLocalTracks();
+          set({ ...withTracks(records), loadState: "ready" });
+        } catch {
+          set({ loadState: "ready" });
+        }
         return;
       }
       if (get().loadState === "loading") return;
@@ -83,29 +92,53 @@ export const useLocalLibraryStore = create<LocalLibraryState>((set, get) => {
       return runImport(() => bridge.localTracksImport(paths));
     },
 
+    importFiles: (files) => {
+      if (files.length === 0) return Promise.resolve(null);
+      const bridge = window.linerElectron;
+      if (bridge) {
+        const paths = files
+          .map((f) => bridge.pathForFile(f))
+          .filter(Boolean);
+        return runImport(() => bridge.localTracksImport(paths));
+      }
+      return runImport(() => webLocalTracks.importFiles(files));
+    },
+
     pickFiles: () => {
       const bridge = window.linerElectron;
-      if (!bridge) return Promise.resolve(null);
-      return runImport(() => bridge.localTracksPick());
+      if (bridge) {
+        return runImport(() => bridge.localTracksPick());
+      }
+      return runImport(async () => {
+        const files = await pickAudioFilesFromBrowser();
+        if (files.length === 0) return null;
+        return webLocalTracks.importFiles(files);
+      });
     },
 
     remove: async (fileIds) => {
-      const bridge = window.linerElectron;
-      if (!bridge || fileIds.length === 0) return;
+      if (fileIds.length === 0) return;
       const removing = new Set(fileIds);
       set(
         withTracks(get().records.filter((record) => !removing.has(record.id))),
       );
       await releasePlayingTrack(fileIds);
-      await bridge.localTracksRemove(fileIds);
+      const bridge = window.linerElectron;
+      if (bridge) {
+        await bridge.localTracksRemove(fileIds);
+      } else {
+        await webLocalTracks.removeLocalTracks(fileIds);
+      }
     },
 
     removeAll: async () => {
-      const bridge = window.linerElectron;
-      if (!bridge) return 0;
       set(withTracks([]));
       await releasePlayingTrack("all");
-      return bridge.localTracksRemoveAll();
+      const bridge = window.linerElectron;
+      if (bridge) {
+        return bridge.localTracksRemoveAll();
+      }
+      return webLocalTracks.removeAllLocalTracks();
     },
   };
 });

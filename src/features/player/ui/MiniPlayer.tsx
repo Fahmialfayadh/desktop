@@ -576,10 +576,42 @@ function MiniPlayer({
     setShownProgress(secondProgress);
   }
 
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  const handleMobileTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      touchStartRef.current = {
+        x: e.touches[0].clientX,
+        y: e.touches[0].clientY,
+      };
+    }
+  }, []);
+
+  const handleMobileTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (!touchStartRef.current || e.changedTouches.length === 0) return;
+    const start = touchStartRef.current;
+    const end = {
+      x: e.changedTouches[0].clientX,
+      y: e.changedTouches[0].clientY,
+    };
+    touchStartRef.current = null;
+
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+
+    if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      if (dx < 0) {
+        void playerEngine.skipNext();
+      } else {
+        void playerEngine.skipPrevious();
+      }
+    }
+  }, []);
+
   return (
     <div
       ref={miniPlayerRootRef}
-      className="relative h-[64px] w-full select-none"
+      className="relative w-full select-none"
     >
       <AnimatePresence>
         {volumeOpen && (
@@ -639,8 +671,129 @@ function MiniPlayer({
         )}
       </AnimatePresence>
 
+      {/* Mobile MiniPlayer (< 768px) */}
       <div
-        className={`relative h-[64px] w-full overflow-hidden cursor-pointer ${
+        className="flex md:hidden relative w-full select-none"
+        onTouchStart={handleMobileTouchStart}
+        onTouchEnd={handleMobileTouchEnd}
+      >
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => onFullscreenOpen?.()}
+          className="mx-2 mb-1.5 h-[58px] rounded-[14px] px-2.5 flex items-center gap-2.5 relative overflow-hidden backdrop-blur-[24px] backdrop-saturate-150 border border-border-primary/40 bg-bg-glass [[data-cover-glow=on]_&]:bg-black/45 cursor-pointer touch-manipulation w-full"
+        >
+          {/* Background accent progress */}
+          <div
+            className="absolute inset-0 z-0 pointer-events-none origin-left"
+            style={{
+              backgroundColor: accentColor,
+              transform: `scaleX(${activeProgress})`,
+              transition:
+                isPlaying && !progressJumped
+                  ? `transform ${PROGRESS_STEP_MS}ms linear`
+                  : PROGRESS_JUMP_TRANSITION,
+            }}
+          />
+
+          {/* Thin bottom progress bar (2px) */}
+          <div className="absolute inset-x-0 bottom-0 h-[2px] bg-black/10 dark:bg-white/10 z-10 pointer-events-none">
+            <div
+              className="h-full origin-left"
+              style={{
+                backgroundColor: accentColorSolid || "currentColor",
+                transform: `scaleX(${activeProgress})`,
+                transition:
+                  isPlaying && !progressJumped
+                    ? `transform ${PROGRESS_STEP_MS}ms linear`
+                    : PROGRESS_JUMP_TRANSITION,
+              }}
+            />
+          </div>
+
+          {/* Cover Art */}
+          <div className="relative h-[40px] w-[40px] shrink-0 overflow-hidden rounded-[9px] bg-bg-elevated z-10 pointer-events-none">
+            <CoverImage
+              key={coverUrl}
+              src={coverUrl}
+              alt="Track artwork"
+              width={40}
+              height={40}
+              priority
+              draggable={false}
+              onLoad={(e) => {
+                extractAccentColor(e.currentTarget as HTMLImageElement);
+              }}
+              className="h-[40px] w-[40px] object-cover rounded-[9px]"
+            />
+          </div>
+
+          {/* Title & Artist */}
+          <div className="flex min-w-0 flex-1 flex-col justify-center z-10 pointer-events-none">
+            <p className="m-0 truncate text-[14px] font-[500] text-text-primary leading-tight">
+              {trackTitle}
+            </p>
+            <p className="m-0 truncate text-[12px] font-[400] text-text-tertiary leading-tight mt-0.5">
+              {trackArtists}
+            </p>
+          </div>
+
+          {/* Like button (44x44 tap target) */}
+          {!isLocal && (
+            <button
+              type="button"
+              aria-label={isLiked ? "Unlike" : "Like"}
+              className="relative z-20 flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-full bg-transparent border-none p-0 cursor-pointer text-text-secondary active:scale-90 transition-transform touch-manipulation"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleLikeToggle();
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              {isLiked ? (
+                <HeartFill size={20} className="text-accent-primary" />
+              ) : (
+                <HeartLine size={20} />
+              )}
+            </button>
+          )}
+
+          {/* Play / Pause button (44x44 tap target) */}
+          <button
+            type="button"
+            aria-label={isPlaying ? "Pause" : "Play"}
+            className="relative z-20 flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-full bg-btn-primary-bg text-btn-primary-text shadow-sm cursor-pointer border-none p-0 active:scale-90 transition-transform touch-manipulation"
+            onClick={(e) => {
+              e.stopPropagation();
+              void playerEngine.togglePlayPause();
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <span className="relative flex h-[16px] w-[16px] items-center justify-center">
+              <span
+                className={`absolute inset-0 flex items-center justify-center ${
+                  isLoading ? "opacity-0" : ""
+                } transition-transform ${isPlaying ? "" : "translate-x-[0.5px]"}`}
+              >
+                <PlayerMorphIcon
+                  icon={isPlaying ? ICON_PAUSE : ICON_PLAY}
+                  size={16}
+                />
+              </span>
+              {isLoading && (
+                <span
+                  className="absolute h-[16px] w-[16px] animate-spin rounded-full border-[2px] border-current border-t-transparent"
+                  aria-label="Loading playback"
+                />
+              )}
+            </span>
+          </button>
+        </div>
+      </div>
+
+      {/* Desktop MiniPlayer (>= 768px) */}
+      <div
+        className={`hidden md:block relative h-[64px] w-full overflow-hidden cursor-pointer ${
           usesRoundedStyle
             ? "rounded-full border-[0.5px] border-border-tertiary bg-bg-primary"
             : embedded

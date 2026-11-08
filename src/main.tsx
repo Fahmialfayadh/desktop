@@ -3,12 +3,16 @@ import ReactDOM from "react-dom/client";
 import { initGlobalErrorHandlers } from "@/shared/utils/globalErrorHandlers";
 import { hydrateScreenCache } from "@/shared/cache/screenCache";
 import { applyStoredTheme } from "@/shared/utils/storedTheme";
+import { installWebCorsFetchProxy } from "@/shared/api/webCorsProxy";
 
 initGlobalErrorHandlers();
 
 const isOverlay = window.location.hash.startsWith("#/overlay");
 
-if (!isOverlay) applyStoredTheme();
+if (!isOverlay) {
+  applyStoredTheme();
+  installWebCorsFetchProxy();
+}
 
 async function loadRoot(): Promise<React.ReactElement> {
   if (isOverlay) {

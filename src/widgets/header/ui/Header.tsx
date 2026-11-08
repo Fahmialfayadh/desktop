@@ -19,12 +19,15 @@ export const Header = forwardRef<HTMLElement, HeaderProps>(function Header(
   { className },
   ref,
 ) {
+  const isElectron =
+    typeof window !== "undefined" && Boolean(window.linerElectron);
+
   return (
     <header
       ref={ref}
       data-window-drag
       className={cn(
-        "relative z-45 w-full shrink-0 select-none bg-transparent h-[50px] flex items-center justify-between",
+        "relative z-45 w-full shrink-0 select-none bg-transparent min-h-[50px] pt-[var(--safe-top)] flex items-center justify-between",
         className,
       )}
     >
@@ -48,15 +51,17 @@ export const Header = forwardRef<HTMLElement, HeaderProps>(function Header(
 
       <div className="flex items-center gap-[8px] mr-[6px] shrink-0">
         <HistoryNavIsland />
-        <motion.div
-          layoutId={WINDOW_CONTROLS_LAYOUT_ID}
-          transition={WINDOW_CONTROLS_MORPH}
-          data-no-window-drag
-          data-no-tooltip="true"
-          className="h-[38px] flex items-center gap-[2px] px-[4px] rounded-[10px] shrink-0 bg-bg-glass backdrop-blur-[20px]"
-        >
-          <WindowControls bare />
-        </motion.div>
+        {isElectron && (
+          <motion.div
+            layoutId={WINDOW_CONTROLS_LAYOUT_ID}
+            transition={WINDOW_CONTROLS_MORPH}
+            data-no-window-drag
+            data-no-tooltip="true"
+            className="h-[38px] flex items-center gap-[2px] px-[4px] rounded-[10px] shrink-0 bg-bg-glass backdrop-blur-[20px]"
+          >
+            <WindowControls bare />
+          </motion.div>
+        )}
       </div>
     </header>
   );

@@ -87,7 +87,7 @@ export function LibraryGridSkeleton({
     );
   }
   return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(165px,1fr))] gap-[24px] pb-[24px]">
+    <div className="grid grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(165px,1fr))] gap-3 sm:gap-[24px] pb-[24px]">
       {Array.from({ length: count }, (_, index) => (
         <LoadingSkeletonGrid key={index} />
       ))}
@@ -270,7 +270,7 @@ function LibraryItemRow({ item }: { item: LibraryItemViewModel }) {
               <button
                 type="button"
                 aria-label={t("common.more_options")}
-                className="rounded-control bg-transparent border-0 p-0 text-text-primary transition-all duration-200 active:scale-[0.96] flex items-center justify-center cursor-pointer opacity-70 hover:opacity-100"
+                className="rounded-control bg-transparent border-0 p-1 md:p-0 min-h-[36px] min-w-[36px] md:min-h-[28px] md:min-w-[28px] text-text-primary transition-all duration-200 active:scale-[0.96] flex items-center justify-center cursor-pointer opacity-100 md:opacity-70 md:hover:opacity-100 touch-manipulation"
                 onClick={(e) => {
                   e.stopPropagation();
                   setMenuOpen(!menuOpen);
@@ -442,7 +442,7 @@ export default function LibraryGrid({
   }
 
   return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(165px,1fr))] gap-[24px] pb-[24px]">
+    <div className="grid grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(165px,1fr))] gap-3 sm:gap-[24px] pb-[24px]">
       {prepends.map((node, index) => (
         <div
           key={`prepend-${index}`}

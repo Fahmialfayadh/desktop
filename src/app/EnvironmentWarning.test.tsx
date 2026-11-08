@@ -53,16 +53,11 @@ describe("EnvironmentWarning", () => {
     vi.unstubAllGlobals();
   });
 
-  it("warns in a plain browser and hides after skip", () => {
+  it("renders nothing in a plain browser", () => {
     const mounted = renderWarning();
     mounts.push(mounted);
     const banner = mounted.host.querySelector("button");
-    expect(banner).not.toBeNull();
-    expect(mounted.host.textContent).toMatch(/Electron/);
-    act(() => {
-      banner!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    expect(sessionStorage.getItem("liner:env-warning-skipped")).toBe("1");
+    expect(banner).toBeNull();
     expect(mounted.host.textContent).toBe("");
   });
 
@@ -70,6 +65,8 @@ describe("EnvironmentWarning", () => {
     (window as unknown as Record<string, unknown>).linerElectron = {};
     const mounted = renderWarning();
     mounts.push(mounted);
+    const banner = mounted.host.querySelector("button");
+    expect(banner).toBeNull();
     expect(mounted.host.textContent).toBe("");
   });
 });

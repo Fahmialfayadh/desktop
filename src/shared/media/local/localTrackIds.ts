@@ -1,3 +1,5 @@
+import { webLocalTracks } from "@/shared/storage/webLocalTracks";
+
 const LOCAL_TRACK_PREFIX = "local:";
 
 export function isLocalTrackId(id: string | null | undefined): boolean {
@@ -13,9 +15,17 @@ export function localFileId(trackId: string): string {
 }
 
 export function localTrackAudioUrl(trackId: string): string {
+  if (typeof window !== "undefined" && !window.linerElectron) {
+    const webUrl = webLocalTracks.getLocalAudioUrl(localFileId(trackId));
+    if (webUrl) return webUrl;
+  }
   return `liner-local://audio/${localFileId(trackId)}`;
 }
 
 export function localTrackCoverUrl(fileId: string): string {
+  if (typeof window !== "undefined" && !window.linerElectron) {
+    const webUrl = webLocalTracks.getLocalCoverUrl(fileId);
+    if (webUrl) return webUrl;
+  }
   return `liner-local://cover/${fileId}`;
 }

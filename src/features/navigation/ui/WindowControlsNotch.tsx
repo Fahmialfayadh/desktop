@@ -14,6 +14,10 @@ export default function WindowControlsNotch({
   tone,
   blur,
 }: WindowControlsNotchProps) {
+  if (typeof window !== "undefined" && !window.linerElectron) {
+    return null;
+  }
+
   return (
     <motion.div
       layoutId={WINDOW_CONTROLS_LAYOUT_ID}

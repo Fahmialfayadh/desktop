@@ -71,6 +71,7 @@ import {
 import { UpdateModal, UpdateToastBridge } from "@/features/updater";
 import { YoutubeSignInNotice } from "@/features/youtube-auth";
 import { useOfflineModeStore } from "@/features/connectivity";
+import { MobileBottomNav } from "@/widgets/mobile-nav";
 
 interface AppFrameProps {
   children: React.ReactNode;
@@ -556,6 +557,12 @@ export default function AppFrame({ children }: AppFrameProps) {
         if (sidebarRef.current?.contains(target)) {
           return;
         }
+        if (
+          target instanceof Element &&
+          target.closest("[data-mobile-bottom-nav]")
+        ) {
+          return;
+        }
         closeSearch();
       }
       if (queuePopupOpen) {
@@ -566,6 +573,12 @@ export default function AppFrame({ children }: AppFrameProps) {
           return;
         }
         if (sidebarRef.current?.contains(target)) {
+          return;
+        }
+        if (
+          target instanceof Element &&
+          target.closest("[data-mobile-bottom-nav]")
+        ) {
           return;
         }
         if (
@@ -724,7 +737,7 @@ export default function AppFrame({ children }: AppFrameProps) {
   return (
     <div
       ref={appFrameRef}
-      className={`app-shell-enter relative flex flex-col h-full w-full overflow-hidden p-1.5 gap-1.5 ${
+      className={`app-shell-enter relative flex flex-col h-full w-full overflow-hidden p-0 md:p-1.5 gap-0 md:gap-1.5 ${
         isFullscreenPlayer ? "bg-black" : "bg-bg-canvas"
       } ${isEdgeToEdge ? "rounded-none" : "rounded-item"}`}
       style={isEdgeToEdge ? undefined : { clipPath: "inset(0 round 12px)" }}
@@ -743,7 +756,7 @@ export default function AppFrame({ children }: AppFrameProps) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.22, ease: "easeOut" }}
-            className="absolute inset-x-1.5 top-1.5 z-[45]"
+            className="absolute inset-x-0 md:inset-x-1.5 top-0 md:top-1.5 z-[45]"
           >
             <Header
               searchOpen={searchOpen}
@@ -755,13 +768,13 @@ export default function AppFrame({ children }: AppFrameProps) {
 
       <div
         className={cn(
-          "flex-1 min-h-0 flex flex-row w-full gap-1.5 overflow-hidden relative z-10",
+          "flex-1 min-h-0 flex flex-row w-full gap-0 md:gap-1.5 overflow-hidden relative z-10",
           fullscreenPlayerOpen && fullscreenEffectsReady && "invisible",
         )}
       >
         <aside
           ref={sidebarRef}
-          className="w-[58px] mt-[56px] shrink-0 z-[45] relative flex flex-col"
+          className="hidden md:flex w-[58px] mt-[56px] shrink-0 z-[45] relative flex-col"
         >
           <Sidebar
             searchOpen={searchOpen}
@@ -769,14 +782,17 @@ export default function AppFrame({ children }: AppFrameProps) {
           />
         </aside>
 
-        <div className="flex-1 flex flex-col min-w-0 h-full relative gap-1.5 overflow-hidden">
+        <div className="flex-1 flex flex-col min-w-0 h-full relative gap-0 md:gap-1.5 overflow-hidden">
           <main
             className={cn(
-              "flex-1 min-w-0 flex flex-col relative h-full overflow-hidden [--page-inset-top:56px]",
-              "rounded-item",
+              "flex-1 min-w-0 flex flex-col relative h-full overflow-hidden [--page-inset-top:calc(56px+var(--safe-top))] md:[--page-inset-top:56px]",
+              "rounded-none md:rounded-item",
+              shouldShowMiniPlayer
+                ? "[--page-inset-bottom:calc(124px+var(--safe-bottom))] [--floating-inset-bottom:calc(124px+var(--safe-bottom))]"
+                : "[--page-inset-bottom:calc(56px+var(--safe-bottom))] [--floating-inset-bottom:calc(56px+var(--safe-bottom))]",
               shouldShowMiniPlayer && hasPageBackdrop
-                ? "[--page-inset-bottom:64px] [--floating-inset-bottom:70px]"
-                : "[--page-inset-bottom:0px] [--floating-inset-bottom:0px]",
+                ? "md:[--page-inset-bottom:64px] md:[--floating-inset-bottom:70px]"
+                : "md:[--page-inset-bottom:0px] md:[--floating-inset-bottom:0px]",
             )}
           >
             <div
@@ -805,12 +821,11 @@ export default function AppFrame({ children }: AppFrameProps) {
                   <motion.aside
                     key="right-drawer"
                     ref={queueDrawerRef}
-                    initial={{ x: RIGHT_DRAWER_WIDTH }}
+                    initial={{ x: "100%" }}
                     animate={{ x: 0 }}
-                    exit={{ x: RIGHT_DRAWER_WIDTH }}
+                    exit={{ x: "100%" }}
                     transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-                    className="pointer-events-auto absolute top-(--page-inset-top) bottom-(--floating-inset-bottom) right-0 z-[50]"
-                    style={{ width: RIGHT_DRAWER_WIDTH }}
+                    className="pointer-events-auto absolute top-(--page-inset-top) bottom-(--floating-inset-bottom) right-0 z-[50] w-full sm:w-[440px]"
                   >
                     <RightDrawer onClose={closeRightPanel} />
                   </motion.aside>
@@ -824,7 +839,7 @@ export default function AppFrame({ children }: AppFrameProps) {
               ref={miniPlayerContainerRef}
               // Above the right drawer (z-50) so the player's volume/speed/queue
               // popups, which live in this stacking context, aren't hidden by it.
-              className={`relative z-[55] w-full shrink-0 ${hasPageBackdrop ? "-mt-[70px]" : ""}`}
+              className={`max-md:absolute max-md:inset-x-0 max-md:bottom-[calc(56px+var(--safe-bottom))] md:relative md:bottom-auto z-[55] w-full shrink-0 ${hasPageBackdrop ? "md:-mt-[70px]" : ""}`}
             >
               <MiniPlayer
                 embedded
@@ -833,6 +848,15 @@ export default function AppFrame({ children }: AppFrameProps) {
                 onFullscreenOpen={openFullscreenPlayer}
               />
             </div>
+          )}
+
+          {!isFullscreenPlayer && (
+            <MobileBottomNav
+              searchOpen={searchOpen}
+              onSearchToggle={handleSearchToggle}
+              onSearchClose={closeSearch}
+              className="max-md:absolute max-md:inset-x-0 max-md:bottom-0"
+            />
           )}
         </div>
       </div>
@@ -894,14 +918,9 @@ export default function AppFrame({ children }: AppFrameProps) {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -12, scale: 0.99 }}
             transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-            className={`absolute right-0 z-[60] flex flex-col items-center pointer-events-none pt-[54px]`}
-            style={{
-              left: SIDEBAR_WIDTH + SHELL_EDGE_GAP,
-              right: SHELL_EDGE_GAP,
-              top: 6,
-            }}
+            className="absolute z-[60] flex flex-col items-center pointer-events-none pt-[calc(54px+var(--safe-top))] left-2 right-2 md:!left-[64px] md:!right-[6px] top-1.5"
           >
-            <div className="w-[min(660px,calc(100vw-72px))] h-[54px] rounded-control pointer-events-auto flex items-center px-[18px] gap-[14px] bg-bg-panel border border-border-primary/50">
+            <div className="w-full max-w-[660px] md:w-[min(660px,calc(100vw-72px))] h-[54px] rounded-control pointer-events-auto flex items-center px-[18px] gap-[14px] bg-bg-panel border border-border-primary/50">
               <span className="shrink-0 flex items-center justify-center text-text-tertiary">
                 <AnimatePresence mode="wait" initial={false}>
                   {searchLoading ? (
@@ -979,7 +998,7 @@ export default function AppFrame({ children }: AppFrameProps) {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -6, scale: 0.99 }}
                   transition={{ duration: 0.1, ease: [0.16, 1, 0.3, 1] }}
-                  className="w-[min(660px,calc(100vw-72px))] mt-[8px] max-h-[500px] h-[500px] rounded-control pointer-events-auto flex flex-col overflow-hidden bg-bg-panel border border-border-primary/50"
+                  className="w-full max-w-[660px] md:w-[min(660px,calc(100vw-72px))] mt-[8px] max-h-[calc(100dvh-190px)] md:max-h-[500px] h-[500px] rounded-control pointer-events-auto flex flex-col overflow-hidden bg-bg-panel border border-border-primary/50"
                 >
                   <div className="flex gap-[6px] px-[14px] pt-[12px] pb-[6px] shrink-0 overflow-x-auto">
                     {filterKeys.map((key) => {
@@ -1081,7 +1100,7 @@ export default function AppFrame({ children }: AppFrameProps) {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -6, scale: 0.99 }}
                   transition={{ duration: 0.1, ease: [0.16, 1, 0.3, 1] }}
-                  className="w-[min(660px,calc(100vw-72px))] mt-[8px] max-h-[480px] h-auto rounded-control pointer-events-auto flex flex-col overflow-hidden bg-bg-panel border border-border-primary/50"
+                  className="w-full max-w-[660px] md:w-[min(660px,calc(100vw-72px))] mt-[8px] max-h-[calc(100dvh-190px)] md:max-h-[480px] h-auto rounded-control pointer-events-auto flex flex-col overflow-hidden bg-bg-panel border border-border-primary/50"
                 >
                   <SearchHistoryList
                     onSelectQuery={handleSelectHistoryQuery}
@@ -1102,7 +1121,7 @@ export default function AppFrame({ children }: AppFrameProps) {
       </AnimatePresence>
 
       <AppOverlays />
-      {isFullscreenPlayer && (
+      {isFullscreenPlayer && typeof window !== "undefined" && Boolean(window.linerElectron) && (
         <div
           data-theme="dark"
           className="dark absolute top-1.5 right-1.5 z-[80]"

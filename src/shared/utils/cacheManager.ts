@@ -1,5 +1,7 @@
 import { linerDb } from "@/shared/storage/linerDb";
 import { useLocalLibraryStore } from "@/features/library/local/store/localLibraryStore";
+import { useSavedTracksStore } from "@/features/library/saved/store/savedTracksStore";
+import { webLocalTracks } from "@/shared/storage/webLocalTracks";
 import {
   audioCache,
   DEFAULT_AUDIO_CACHE_LIMIT_BYTES,
@@ -208,6 +210,7 @@ async function getCoverCacheBytes(): Promise<{ bytes: number; count: number }> {
 // gathers live analytics across indexeddb, caches, localstorage and electron
 export async function getStorageAnalytics(): Promise<StorageAnalytics> {
   let audioBytes = 0;
+  let audioCount = 0;
   let coversBytes = 0;
   let coversCount = 0;
   let lyricsBytes = 0;
@@ -240,6 +243,8 @@ export async function getStorageAnalytics(): Promise<StorageAnalytics> {
     const audioTrackBytes = await linerDb.getTotalTrackBytes();
     const audioBlobBytes = await linerDb.getTotalAudioBytes();
     audioBytes = audioTrackBytes + audioBlobBytes;
+    const records = await linerDb.listAudioEntries();
+    audioCount = records.length;
   } catch {}
 
   // take the maximum between indexeddb object store iteration and physical disk size
@@ -332,6 +337,12 @@ export async function getStorageAnalytics(): Promise<StorageAnalytics> {
       localBytes = usage.bytes;
       localCount = usage.count;
     } catch {}
+  } else if (typeof window !== "undefined" && !window.linerElectron) {
+    try {
+      const usage = await webLocalTracks.getLocalUsage();
+      localBytes = usage.bytes;
+      localCount = usage.count;
+    } catch {}
   }
 
   let likedBytes = 0;
@@ -340,6 +351,13 @@ export async function getStorageAnalytics(): Promise<StorageAnalytics> {
   if (typeof window !== "undefined" && window.linerElectron?.savedTracksUsage) {
     try {
       const usage = await window.linerElectron.savedTracksUsage();
+      likedBytes = usage.bytes;
+      likedCount = usage.count;
+      if (usage.freeBytes !== null) freeBytes = usage.freeBytes;
+    } catch {}
+  } else if (typeof window !== "undefined" && !window.linerElectron) {
+    try {
+      const usage = await webLocalTracks.getSavedUsage();
       likedBytes = usage.bytes;
       likedCount = usage.count;
       if (usage.freeBytes !== null) freeBytes = usage.freeBytes;
@@ -382,6 +400,7 @@ export async function getStorageAnalytics(): Promise<StorageAnalytics> {
       id: "audio",
       labelKey: "settings.storage.categories.audio",
       bytes: audioBytes,
+      count: audioCount,
       color: "#8B5CF6", // purple
       group: "cache",
     },
@@ -445,6 +464,9 @@ export async function clearStorageCategories(
   const set = new Set(categoryIds);
   if (set.has("local")) {
     await useLocalLibraryStore.getState().removeAll();
+  }
+  if (set.has("liked")) {
+    await useSavedTracksStore.getState().removeAll();
   }
   const isAllCategories =
     set.has("audio") &&

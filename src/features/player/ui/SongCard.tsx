@@ -275,7 +275,7 @@ function SongCard({
               <button
                 type="button"
                 aria-label={t("common.more_options")}
-                className="rounded-control bg-transparent border-0 p-0 text-text-primary transition-all duration-200 active:scale-[0.96] flex items-center justify-center cursor-pointer"
+                className="rounded-control bg-transparent border-0 p-1 md:p-0 min-h-[36px] min-w-[36px] md:min-h-[28px] md:min-w-[28px] text-text-primary transition-all duration-200 active:scale-[0.96] flex items-center justify-center cursor-pointer opacity-100 md:opacity-0 md:group-hover:opacity-100 touch-manipulation"
               >
                 <More2Fill size={22} />
               </button>

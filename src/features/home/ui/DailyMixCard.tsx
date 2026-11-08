@@ -1,4 +1,5 @@
 import { memo, useState } from "react";
+import { More2Fill } from "@mingcute/react";
 import { ScrollableText } from "@/shared/ui";
 import DropdownMenu from "@/shared/ui/DropdownMenu";
 import type { DailyMix } from "../hooks/useDailyMixes";
@@ -32,7 +33,7 @@ function DailyMixCard({ mix, index }: DailyMixCardProps) {
 
   return (
     <div
-      className="group flex-shrink-0 w-[175px] cursor-pointer select-none"
+      className="group relative flex-shrink-0 w-[175px] cursor-pointer select-none"
       onClick={handleClick}
       onContextMenu={handleContextMenu}
       onMouseEnter={() => setIsCardHovered(true)}
@@ -58,16 +59,30 @@ function DailyMixCard({ mix, index }: DailyMixCardProps) {
       </div>
 
       {menuItems.length > 0 && (
-        <DropdownMenu
-          trigger={<span />}
-          items={menuItems}
-          open={menuOpen}
-          onOpenChange={(isOpen) => {
-            setMenuOpen(isOpen);
-            if (!isOpen) setMenuPosition(null);
-          }}
-          position={menuPosition}
-        />
+        <div className="absolute top-2 right-2 z-10 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+          <DropdownMenu
+            trigger={
+              <button
+                type="button"
+                aria-label="More options"
+                className="flex h-[32px] w-[32px] items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-md border-0 p-0 cursor-pointer active:scale-95 touch-manipulation"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMenuOpen(!menuOpen);
+                }}
+              >
+                <More2Fill size={18} />
+              </button>
+            }
+            items={menuItems}
+            open={menuOpen}
+            onOpenChange={(isOpen) => {
+              setMenuOpen(isOpen);
+              if (!isOpen) setMenuPosition(null);
+            }}
+            position={menuPosition}
+          />
+        </div>
       )}
     </div>
   );

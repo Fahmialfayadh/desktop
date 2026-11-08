@@ -3,7 +3,7 @@ import { cn } from "@/shared/lib";
 import ScrollableText from "./ScrollableText";
 
 export const HERO_TITLE_CLASS =
-  "font-roboto-flex-heading m-0 text-[30px] leading-[1.15] text-text-primary line-clamp-1";
+  "font-roboto-flex-heading m-0 text-[22px] md:text-[30px] leading-[1.15] text-text-primary line-clamp-1";
 
 const HERO_SUBTITLE_TEXT =
   "m-0 text-heading font-[400] leading-[1.3] text-text-secondary";
@@ -57,12 +57,12 @@ export function EntityHero({
 }: EntityHeroProps) {
   return (
     <section
-      className="flex w-full min-w-0 items-start gap-[22px]"
+      className="flex w-full min-w-0 flex-col items-center text-center md:flex-row md:items-start md:text-left gap-4 md:gap-[22px]"
       data-no-window-drag
     >
       <div
         className={cn(
-          "relative flex h-[168px] w-[168px] shrink-0 items-center justify-center overflow-hidden rounded-[10px]",
+          "relative flex h-[144px] w-[144px] md:h-[168px] md:w-[168px] shrink-0 items-center justify-center overflow-hidden rounded-[10px]",
           coverClassName || "bg-border-alpha-14",
         )}
       >
@@ -71,25 +71,33 @@ export function EntityHero({
 
       <div
         className={cn(
-          "flex min-w-0 flex-1 flex-col pt-[2px]",
+          "flex min-w-0 flex-1 flex-col items-center md:items-start pt-[2px]",
           contentClassName,
         )}
       >
         <div className="min-w-0">{title}</div>
         {subtitle && <div className="mt-[4px] min-w-0">{subtitle}</div>}
-        {meta && <div className="mt-[12px]">{meta}</div>}
+        {meta && (
+          <div className="mt-[12px] flex justify-center md:justify-start">
+            {meta}
+          </div>
+        )}
 
         {(actions || trailingActions) && (
           <div
             className={cn(
-              "mt-[26px] flex flex-wrap items-center justify-between gap-[12px]",
+              "mt-[20px] md:mt-[26px] flex flex-wrap items-center justify-center md:justify-between gap-[12px] w-full",
               actionsClassName,
             )}
           >
-            <div className="flex items-center gap-[8px]">{actions}</div>
-            <div className="flex items-center gap-[12px]">
-              {trailingActions}
+            <div className="flex flex-wrap items-center justify-center md:justify-start gap-[8px]">
+              {actions}
             </div>
+            {trailingActions && (
+              <div className="flex flex-wrap items-center justify-center md:justify-start gap-[12px]">
+                {trailingActions}
+              </div>
+            )}
           </div>
         )}
       </div>

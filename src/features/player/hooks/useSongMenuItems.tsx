@@ -7,6 +7,7 @@ import {
   LuPlus,
   LuTrash2,
   LuFolderPlus,
+  LuDownload,
 } from "react-icons/lu";
 import { ShareForwardLine } from "@mingcute/react";
 import type { DropdownMenuItem } from "@/shared/ui/DropdownMenu";
@@ -22,6 +23,8 @@ import { useTranslation } from "@/languages";
 import { showToast } from "@/shared/ui";
 import { buildShareUrl } from "@/shared/utils/share";
 import { isLocalTrackId } from "@/shared/media/local";
+import { buildDirectMp3DownloadUrl } from "@/shared/api/baseUrl";
+import { useOfflineModeStore } from "@/features/connectivity";
 
 const CLOUD_ONLY_ITEMS = new Set([
   "start-radio",
@@ -30,6 +33,7 @@ const CLOUD_ONLY_ITEMS = new Set([
   "add-to-playlist",
   "remove-from-playlist",
   "share",
+  "download-mp3",
 ]);
 
 export interface SongMenuContext {
@@ -73,6 +77,7 @@ export function useSongMenuItems(ctx: SongMenuContext): DropdownMenuItem[] {
   const unlikeMutation = useUnlikeTrack();
 
   const liked = useIsTrackLiked(id);
+  const isOffline = useOfflineModeStore((state) => state.offline);
 
   const handleLike = useCallback(async () => {
     if (!id) return;
@@ -95,8 +100,33 @@ export function useSongMenuItems(ctx: SongMenuContext): DropdownMenuItem[] {
     }
   }, [id, searchType, title, artists, t]);
 
+  const handleDownloadMp3 = useCallback(() => {
+    if (!id) return;
+    const url = buildDirectMp3DownloadUrl(id, { title, artist: artists });
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${title || "track"}.mp3`;
+    a.rel = "noopener noreferrer";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    showToast("Downloading MP3", "checkmark", {
+      description: artists ? `${title} - ${artists}` : title,
+    });
+  }, [id, title, artists]);
+
+  const canDownload =
+    Boolean(id) && !isLocalTrackId(id) && !id?.startsWith("sc:");
+
   const buildMenu = useCallback((): DropdownMenuItem[] => {
     const isTrack = searchType === "track" || !searchType;
+
+    const downloadItem: DropdownMenuItem = {
+      id: "download-mp3",
+      label: "Download MP3",
+      icon: <LuDownload size={15} />,
+      onClick: handleDownloadMp3,
+    };
 
     if (isTrack) {
       if (playlistId) {
@@ -165,6 +195,7 @@ export function useSongMenuItems(ctx: SongMenuContext): DropdownMenuItem[] {
             ),
             onClick: handleLike,
           },
+          ...(canDownload ? [downloadItem] : []),
           {
             id: "share",
             label: t("common.share"),
@@ -273,6 +304,7 @@ export function useSongMenuItems(ctx: SongMenuContext): DropdownMenuItem[] {
             });
           },
         },
+        ...(canDownload ? [downloadItem] : []),
         {
           id: "share",
           label: t("common.share"),
@@ -333,22 +365,26 @@ export function useSongMenuItems(ctx: SongMenuContext): DropdownMenuItem[] {
     liked,
     handleLike,
     handleShare,
+    handleDownloadMp3,
+    canDownload,
     playlistsData,
     t,
   ]);
 
   const items = buildMenu();
-  if (!isLocalTrackId(id)) return items;
-  const deviceItems = items.filter((item) => !CLOUD_ONLY_ITEMS.has(item.id));
-  if (!onRemoveFromDevice) return deviceItems;
-  return [
-    ...deviceItems,
-    {
-      id: "remove-from-device",
-      label: t("library.local.remove"),
-      icon: <LuTrash2 size={15} />,
-      danger: true,
-      onClick: onRemoveFromDevice,
-    },
-  ];
+  if (!isLocalTrackId(id) && !isOffline) return items;
+  const filtered = items.filter((item) => !CLOUD_ONLY_ITEMS.has(item.id));
+  if (isLocalTrackId(id) && onRemoveFromDevice) {
+    return [
+      ...filtered,
+      {
+        id: "remove-from-device",
+        label: t("library.local.remove"),
+        icon: <LuTrash2 size={15} />,
+        danger: true,
+        onClick: onRemoveFromDevice,
+      },
+    ];
+  }
+  return filtered;
 }

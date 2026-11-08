@@ -1,0 +1,46 @@
+services:
+  # 1. Backend Stream & CORS Gateway (Web Service / Docker)
+  - type: web
+    name: liner-stream-gateway
+    env: docker
+    dockerfilePath: backend/Dockerfile
+    dockerContext: backend
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 8787
+      - key: HOST
+        value: 0.0.0.0
+      - key: TMP_STREAM_DIR
+        value: /tmp/liner-stream-cache
+      - key: CORS_ALLOW_ORIGINS
+        value: "*"
+
+  # 2. Frontend Web & Android PWA (Static Site)
+  - type: web
+    name: liner-web
+    env: static
+    plan: free
+    buildCommand: pnpm build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      - path: /*
+        name: Service-Worker-Allowed
+        value: /
+    envVars:
+      - key: NODE_VERSION
+        value: 20.18.0
+      - key: VITE_STREAM_GATEWAY_URL
+        fromService:
+          type: web
+          name: liner-stream-gateway
+          property: host
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false

@@ -12,7 +12,7 @@ export function LoginBrandPanel({ title, subtitle }: LoginBrandPanelProps) {
   const { locale, setLocale, t } = useTranslation();
 
   return (
-    <aside className="relative flex min-h-[340px] flex-col overflow-hidden rounded-[14px] bg-black/[0.03] p-[24px] dark:bg-white/[0.035]">
+    <aside className="relative flex min-h-[160px] md:min-h-[340px] flex-col overflow-hidden rounded-[14px] bg-black/[0.03] p-4 md:p-[24px] dark:bg-white/[0.035]">
       <img
         src={loginMark}
         alt=""
@@ -39,7 +39,7 @@ export function LoginBrandPanel({ title, subtitle }: LoginBrandPanelProps) {
       </div>
 
       <div className="relative mt-auto flex flex-col">
-        <div className="mb-[22px] w-fit">
+        <div className="mb-3 md:mb-[22px] w-fit">
           <MenuSelect
             options={LOCALE_OPTIONS}
             value={locale}
@@ -50,7 +50,7 @@ export function LoginBrandPanel({ title, subtitle }: LoginBrandPanelProps) {
           />
         </div>
         <h1
-          className="m-0 text-[30px] font-[700] leading-[1.08] tracking-[-0.035em] text-text-primary"
+          className="m-0 text-[22px] md:text-[30px] font-[700] leading-[1.08] tracking-[-0.035em] text-text-primary"
           style={{ textWrap: "balance" }}
         >
           {title}

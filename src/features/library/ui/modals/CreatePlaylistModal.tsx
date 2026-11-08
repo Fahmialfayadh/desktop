@@ -53,6 +53,7 @@ export default function CreatePlaylistModal() {
 
   const open = useModalStore((state) => state.createPlaylistOpen);
   const initialUrl = useModalStore((state) => state.createPlaylistInitialUrl);
+  const initialTab = useModalStore((state) => state.createPlaylistInitialTab);
   const pendingTrack = useModalStore(
     (state) => state.createPlaylistPendingTrack,
   );
@@ -77,8 +78,29 @@ export default function CreatePlaylistModal() {
   const isCreate = tab === "create";
 
   useEffect(() => {
+    const handleOpenImportTab = (e?: Event) => {
+      const customEvent = e as CustomEvent<{ url?: string }>;
+      const url = customEvent?.detail?.url || "";
+      useModalStore.getState().openCreatePlaylist(url, null, "import");
+      setTab("import");
+      if (url) {
+        setImportUrl(url);
+      }
+      requestAnimationFrame(() => {
+        linkRef.current?.focus();
+      });
+    };
+
+    window.addEventListener("liner:open-import-tab", handleOpenImportTab);
+    return () => {
+      window.removeEventListener("liner:open-import-tab", handleOpenImportTab);
+    };
+  }, []);
+
+  useEffect(() => {
     if (open) {
-      setTab(initialUrl ? "import" : "create");
+      const targetTab = initialTab ?? (initialUrl ? "import" : "create");
+      setTab(targetTab);
       setTitle("");
       setDescription("");
       setShowDescription(false);
@@ -86,10 +108,10 @@ export default function CreatePlaylistModal() {
       setCreateError("");
       setImportError("");
       requestAnimationFrame(() =>
-        (initialUrl ? linkRef : titleRef).current?.focus(),
+        (targetTab === "import" || initialUrl ? linkRef : titleRef).current?.focus(),
       );
     }
-  }, [open, initialUrl]);
+  }, [open, initialUrl, initialTab]);
 
   async function handleCreate() {
     if (createPlaylist.isPending) return;

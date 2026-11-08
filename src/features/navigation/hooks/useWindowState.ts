@@ -47,7 +47,12 @@ export function useWindowState(): WindowStateHookResult {
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
 
-  const isEdgeToEdge = isMaximized || isFullScreen;
+  const isEdgeToEdge =
+    (typeof window !== "undefined" &&
+      !window.linerElectron &&
+      import.meta.env?.MODE !== "test") ||
+    isMaximized ||
+    isFullScreen;
 
   useEffect(() => {
     activeWindowStateInstances++;

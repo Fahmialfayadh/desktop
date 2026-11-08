@@ -20,7 +20,7 @@ export function CoverSwRegistrar() {
     }
 
     navigator.serviceWorker
-      .register("/cover-sw.js", { scope: "/" })
+      .register("/sw.js", { scope: "/" })
       .catch(() => {
         // SW registration failure is non-fatal — images still load, just uncached.
       });

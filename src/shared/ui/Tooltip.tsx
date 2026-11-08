@@ -15,6 +15,10 @@ export interface TooltipProps {
   wrapperClassName?: string;
 }
 
+const isCoarsePointer = () =>
+  typeof window !== "undefined" &&
+  Boolean(window.matchMedia?.("(pointer: coarse)")?.matches);
+
 function Tooltip({
   content,
   children,
@@ -90,7 +94,7 @@ function Tooltip({
   };
 
   const handleMouseEnter = () => {
-    if (disabled || !content) return;
+    if (disabled || !content || isCoarsePointer()) return;
     clearTimer();
     timerRef.current = setTimeout(open, delay);
   };
@@ -118,7 +122,7 @@ function Tooltip({
     };
   }, []);
 
-  const show = isOpen && !disabled && content;
+  const show = isOpen && !disabled && content && !isCoarsePointer();
 
   const transform =
     side === "top"
@@ -147,6 +151,7 @@ function Tooltip({
       onMouseLeave={handleMouseLeave}
       onFocus={handleMouseEnter}
       onBlur={handleMouseLeave}
+      onTouchStart={() => setIsOpen(false)}
     >
       {children}
       {mounted &&

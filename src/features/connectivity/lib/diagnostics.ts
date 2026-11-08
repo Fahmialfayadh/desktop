@@ -3,9 +3,23 @@ import { SHARE_BASE_URL } from "@/shared/utils/share";
 
 // endpoint bases duplicated here on purpose: importing @/shared/api would
 // close an import cycle (api hooks record failures into this feature).
-const API_BASE =
-  (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, "") ||
-  "https://api.tryliner.fun";
+export function resolveApiProbeBase(): string {
+  const isElectron =
+    typeof window !== "undefined" && Boolean(window.linerElectron);
+  const streamGatewayEnv = (
+    import.meta.env.VITE_STREAM_GATEWAY_URL as string | undefined
+  )?.trim();
+  if (isElectron && !streamGatewayEnv) {
+    return (
+      (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, "") ||
+      "https://api.tryliner.fun"
+    );
+  }
+  return streamGatewayEnv
+    ? streamGatewayEnv.replace(/\/+$/, "")
+    : "http://localhost:8787";
+}
+
 const COVERS_BASE =
   (import.meta.env.VITE_COVERS_PROXY_URL as string | undefined)?.replace(
     /\/+$/,
@@ -16,7 +30,9 @@ const CHECK_TIMEOUT_MS = 8000;
 
 // real origins probed, reused for the dump file metadata
 export const DIAG_ENDPOINTS = {
-  api: API_BASE,
+  get api() {
+    return resolveApiProbeBase();
+  },
   covers: COVERS_BASE,
   link: SHARE_BASE_URL,
 };
@@ -99,7 +115,7 @@ export async function runAllChecks(): Promise<DiagnosticsResult> {
       : { id: "device", status: "fail", detail: "os reports offline" },
   );
 
-  checks.push(await timedFetch(`${API_BASE}/health`));
+  checks.push(await timedFetch(`${DIAG_ENDPOINTS.api}/health`));
 
   const ping = async (id: DiagCheck["id"], url: string): Promise<DiagCheck> => {
     const controller = new AbortController();
@@ -126,7 +142,7 @@ export async function runAllChecks(): Promise<DiagnosticsResult> {
   }
   checks.push(await ping("link", `${SHARE_BASE_URL}/health`));
 
-  const hosts = [API_BASE, COVERS_BASE, SHARE_BASE_URL].map(hostOf);
+  const hosts = [DIAG_ENDPOINTS.api, COVERS_BASE, SHARE_BASE_URL].map(hostOf);
   let main: MainNetResult | null = null;
   try {
     const bridge =

@@ -2,11 +2,17 @@ import { linerDb } from "./linerDb";
 
 export const AUDIO_CACHE_LIMIT_STORAGE_KEY = "liner_audio_cache_limit_bytes";
 export const DEFAULT_AUDIO_CACHE_LIMIT_BYTES = 3 * 1024 * 1024 * 1024;
-export const MIN_AUDIO_CACHE_LIMIT_BYTES = 250 * 1024 * 1024;
+export const MIN_AUDIO_CACHE_LIMIT_BYTES = 50 * 1024 * 1024; // 50 MB
 
 class AudioCache {
   private activeUrls = new Map<string, string>();
   private generation = 0;
+
+  constructor() {
+    if (typeof navigator !== "undefined" && navigator.storage?.persist) {
+      navigator.storage.persist().catch(() => {});
+    }
+  }
 
   // bumped by a clear: downloads started before it must not write back
   currentGeneration(): number {
@@ -26,13 +32,16 @@ class AudioCache {
     if (!val) return DEFAULT_AUDIO_CACHE_LIMIT_BYTES;
     const num = parseInt(val, 10);
     if (isNaN(num)) return DEFAULT_AUDIO_CACHE_LIMIT_BYTES;
-    if (num === 0) return 0;
+    if (num === -1) return -1; // Off
+    if (num === 0) return 0; // Unlimited
     return Math.max(MIN_AUDIO_CACHE_LIMIT_BYTES, num);
   }
 
   async setLimitBytes(bytes: number): Promise<void> {
     if (typeof window !== "undefined" && window.localStorage) {
-      if (bytes === 0) {
+      if (bytes === -1) {
+        localStorage.setItem(AUDIO_CACHE_LIMIT_STORAGE_KEY, "-1");
+      } else if (bytes === 0) {
         localStorage.setItem(AUDIO_CACHE_LIMIT_STORAGE_KEY, "0");
       } else {
         const clamped = Math.max(MIN_AUDIO_CACHE_LIMIT_BYTES, bytes);
@@ -45,7 +54,19 @@ class AudioCache {
   async enforceCacheLimit(customLimit?: number): Promise<number> {
     const limit =
       customLimit !== undefined ? customLimit : this.getLimitBytes();
-    if (limit <= 0) return 0;
+    if (limit === 0) return 0; // Unlimited
+
+    // If cache is Off (-1), evict all cached audio
+    if (limit === -1) {
+      const oldest = await linerDb.getOldestAudioRecords();
+      let evicted = 0;
+      for (const item of oldest) {
+        const size = item.byteSize || item.blob?.size || 0;
+        await this.deleteAudio(item.trackId);
+        evicted += size;
+      }
+      return evicted;
+    }
 
     const totalBytes = await linerDb.getTotalAudioBytes();
     if (totalBytes <= limit) return 0;
@@ -93,6 +114,9 @@ class AudioCache {
   ): Promise<boolean> {
     if (generation !== undefined && generation !== this.generation)
       return false;
+    if (this.getLimitBytes() === -1) {
+      return false; // Off: do not save
+    }
     await linerDb.putAudio(trackId, blob, mimeType);
     await this.enforceCacheLimit();
     return true;

@@ -23,6 +23,8 @@ const USERNAME_RE = /^[a-z0-9_]{3,30}$/;
 export default function LoginPage() {
   const navigate = useNavigate();
   const { isEdgeToEdge } = useWindowState();
+  const isElectron =
+    typeof window !== "undefined" && Boolean(window.linerElectron);
   const login = useAuthStore((state) => state.login);
   const register = useAuthStore((state) => state.register);
   const { t } = useTranslation();
@@ -197,7 +199,7 @@ export default function LoginPage() {
   return (
     <main
       className={cn(
-        "relative flex h-full w-full items-center justify-center overflow-hidden bg-bg-primary",
+        "relative flex h-full w-full items-center justify-center overflow-y-auto md:overflow-hidden bg-bg-primary p-3 md:p-0",
         isEdgeToEdge
           ? "rounded-none border-0"
           : "rounded-item border border-border-primary",
@@ -205,12 +207,12 @@ export default function LoginPage() {
     >
       <LoginBackdrop edgeToEdge={isEdgeToEdge} />
 
-      <WindowControls variant="glass" isFullscreen />
+      {isElectron && <WindowControls variant="glass" isFullscreen />}
 
-      <section className="relative z-10 mx-4 my-auto grid max-h-[calc(100%-48px)] w-full max-w-[780px] grid-cols-[300px_1fr] gap-[8px] overflow-y-auto rounded-panel border border-border-primary bg-bg-panel p-[8px]">
+      <section className="relative z-10 mx-auto my-auto flex w-full max-w-[780px] flex-col md:grid md:grid-cols-[300px_1fr] max-h-[calc(100dvh-24px)] md:max-h-[calc(100%-48px)] gap-[8px] overflow-y-auto overscroll-contain rounded-panel border border-border-primary bg-bg-panel p-[8px]">
         <LoginBrandPanel title={heading} subtitle={subheading} />
 
-        <div className="flex w-full flex-col px-[28px] pb-[22px] pt-[26px]">
+        <div className="flex w-full flex-col px-4 py-4 md:px-[28px] md:pb-[22px] md:pt-[26px]">
           <div className="flex flex-col pb-6">
             <div className="w-full">
               <div className="flex gap-[8px]">

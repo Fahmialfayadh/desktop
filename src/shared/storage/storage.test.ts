@@ -302,7 +302,10 @@ describe("linerDb storage layer", () => {
     expect(audioCache.getLimitBytes()).toBe(3 * 1024 * 1024 * 1024);
 
     await audioCache.setLimitBytes(100);
-    expect(audioCache.getLimitBytes()).toBe(250 * 1024 * 1024);
+    expect(audioCache.getLimitBytes()).toBe(50 * 1024 * 1024);
+
+    await audioCache.setLimitBytes(-1);
+    expect(audioCache.getLimitBytes()).toBe(-1);
 
     await audioCache.setLimitBytes(0);
     expect(audioCache.getLimitBytes()).toBe(0);

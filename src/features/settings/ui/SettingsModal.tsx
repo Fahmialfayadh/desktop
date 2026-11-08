@@ -243,8 +243,21 @@ export default function SettingsModal() {
   const open = useModalStore((state) => state.settingsOpen);
   const close = useModalStore((state) => state.closeSettings);
 
+  const isElectron =
+    typeof window !== "undefined" && Boolean(window.linerElectron);
+  const ELECTRON_ONLY_TABS = useMemo(
+    () => new Set<TabId>(["Shortcuts", "Overlay", "Discord"]),
+    [],
+  );
+
   const [activeTab, setActiveTab] = useState<TabId>("Playback");
   const [searchQuery, setSearchQuery] = useState("");
+
+  useEffect(() => {
+    if (!isElectron && ELECTRON_ONLY_TABS.has(activeTab)) {
+      setActiveTab("Playback");
+    }
+  }, [isElectron, activeTab, ELECTRON_ONLY_TABS]);
 
   const handleClose = () => {
     setSearchQuery("");
@@ -309,6 +322,7 @@ export default function SettingsModal() {
     };
 
     (Object.keys(TAB_LABEL_KEYS) as TabId[]).forEach((tabId) => {
+      if (!isElectron && ELECTRON_ONLY_TABS.has(tabId)) return;
       const texts = [
         ...getTranslationsForAllLocales(TAB_LABEL_KEYS[tabId]),
         ...getTranslationsForAllLocales(TAB_DESC_KEYS[tabId]),
@@ -319,6 +333,7 @@ export default function SettingsModal() {
     });
 
     SETTING_ITEMS.forEach((item) => {
+      if (!isElectron && ELECTRON_ONLY_TABS.has(item.tabId)) return;
       const texts = [
         ...getTranslationsForAllLocales(item.titleKey),
         ...(item.descKey ? getTranslationsForAllLocales(item.descKey) : []),
@@ -329,16 +344,31 @@ export default function SettingsModal() {
     });
 
     return set;
-  }, [searchQuery]);
+  }, [searchQuery, isElectron, ELECTRON_ONLY_TABS]);
+
+  const baseGroups = useMemo(() => {
+    return TAB_GROUPS.map((group) => ({
+      ...group,
+      ids: isElectron
+        ? group.ids
+        : group.ids.filter((id) => !ELECTRON_ONLY_TABS.has(id)),
+    })).filter((group) => group.ids.length > 0);
+  }, [isElectron, ELECTRON_ONLY_TABS]);
 
   const filteredGroups = useMemo(() => {
-    if (!matchingTabIds) return TAB_GROUPS;
+    if (!matchingTabIds) return baseGroups;
 
-    return TAB_GROUPS.map((group) => {
-      const ids = group.ids.filter((id) => matchingTabIds.has(id));
-      return { ...group, ids };
-    }).filter((group) => group.ids.length > 0);
-  }, [matchingTabIds]);
+    return baseGroups
+      .map((group) => {
+        const ids = group.ids.filter((id) => matchingTabIds.has(id));
+        return { ...group, ids };
+      })
+      .filter((group) => group.ids.length > 0);
+  }, [matchingTabIds, baseGroups]);
+
+  const allVisibleTabs = useMemo(() => {
+    return filteredGroups.flatMap((group) => group.ids);
+  }, [filteredGroups]);
 
   useEffect(() => {
     if (!searchQuery.trim()) return;
@@ -347,14 +377,14 @@ export default function SettingsModal() {
       matchingTabIds.size > 0 &&
       !matchingTabIds.has(activeTab)
     ) {
-      const firstMatch = TAB_GROUPS.flatMap((g) => g.ids).find((id) =>
-        matchingTabIds.has(id),
-      );
+      const firstMatch = baseGroups
+        .flatMap((g) => g.ids)
+        .find((id) => matchingTabIds.has(id));
       if (firstMatch) {
         setActiveTab(firstMatch);
       }
     }
-  }, [searchQuery, matchingTabIds, activeTab]);
+  }, [searchQuery, matchingTabIds, activeTab, baseGroups]);
 
   const {
     attach: attachContentFade,
@@ -367,35 +397,95 @@ export default function SettingsModal() {
       open={open}
       onOpenChange={(next) => (!next ? handleClose() : undefined)}
       maxWidth={940}
-      className="p-0 h-[720px] !max-h-[90vh] !flex-row overflow-hidden"
+      className="p-0 h-[88dvh] md:h-[720px] !max-h-[88dvh] md:!max-h-[90vh] flex flex-col md:!flex-row overflow-hidden"
     >
-      <SettingsSidebar
-        groups={filteredGroups}
-        activeTab={activeTab}
-        onSelect={setActiveTab}
-        labels={tabLabels}
-        icons={TAB_ICONS}
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        onClose={handleClose}
-      />
+      <div className="hidden md:flex min-h-0 shrink-0">
+        <SettingsSidebar
+          groups={filteredGroups}
+          activeTab={activeTab}
+          onSelect={setActiveTab}
+          labels={tabLabels}
+          icons={TAB_ICONS}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          onClose={handleClose}
+        />
+      </div>
+
+      {/* Mobile top bar and scrollable tab selector */}
+      <div className="flex md:hidden flex-col shrink-0 border-b border-border-primary/40 bg-bg-panel/50 pt-2.5 pb-2 px-3">
+        <div className="flex items-center justify-between pb-2">
+          <span className="text-[17px] font-semibold text-text-primary">
+            {t("settings.title") || "Settings"}
+          </span>
+          <button
+            type="button"
+            aria-label={t("common.close") || "Close"}
+            onClick={handleClose}
+            className="inline-flex h-[32px] w-[32px] cursor-pointer items-center justify-center rounded-control border-0 bg-transparent p-0 text-text-tertiary transition-colors hover:bg-fill hover:text-text-primary"
+          >
+            <CloseLine size={18} />
+          </button>
+        </div>
+        <div className="flex items-center gap-1.5 overflow-x-auto overscroll-contain no-scrollbar py-0.5">
+          {allVisibleTabs.map((id) => {
+            const Icon = TAB_ICONS[id];
+            const isActive = id === activeTab;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setActiveTab(id)}
+                className={`flex items-center gap-2 shrink-0 px-3 py-1.5 rounded-[9px] text-[13px] font-medium border-0 cursor-pointer transition-colors ${
+                  isActive
+                    ? "bg-fill text-text-primary"
+                    : "bg-transparent text-text-secondary hover:text-text-primary active:bg-fill/50"
+                }`}
+              >
+                <Icon
+                  size={15}
+                  className={
+                    isActive ? "text-text-primary" : "text-text-tertiary"
+                  }
+                />
+                <span>{tabLabels[id]}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <DialogHeader
-          className="shrink-0 px-[20px] pt-[20px] pb-[16px]"
-          title={tabLabels[activeTab]}
-          description={tabDescriptions[activeTab]}
-          trailing={
-            <button
-              type="button"
-              aria-label={t("common.close") || "Close"}
-              onClick={handleClose}
-              className="-mt-[2px] -mr-[6px] inline-flex h-[30px] w-[30px] cursor-pointer items-center justify-center rounded-control border-0 bg-transparent p-0 text-text-tertiary transition-colors hover:bg-fill hover:text-text-primary"
-            >
-              <CloseLine size={17} />
-            </button>
-          }
-        />
+        {/* Desktop header */}
+        <div className="hidden md:block">
+          <DialogHeader
+            className="shrink-0 px-[20px] pt-[20px] pb-[16px]"
+            title={tabLabels[activeTab]}
+            description={tabDescriptions[activeTab]}
+            trailing={
+              <button
+                type="button"
+                aria-label={t("common.close") || "Close"}
+                onClick={handleClose}
+                className="-mt-[2px] -mr-[6px] inline-flex h-[30px] w-[30px] cursor-pointer items-center justify-center rounded-control border-0 bg-transparent p-0 text-text-tertiary transition-colors hover:bg-fill hover:text-text-primary"
+              >
+                <CloseLine size={17} />
+              </button>
+            }
+          />
+        </div>
+
+        {/* Mobile current section indicator */}
+        <div className="md:hidden px-3.5 pt-3 pb-1">
+          <h2 className="text-[17px] font-semibold text-text-primary m-0">
+            {tabLabels[activeTab]}
+          </h2>
+          {tabDescriptions[activeTab] && (
+            <p className="text-caption text-text-tertiary m-0 mt-0.5">
+              {tabDescriptions[activeTab]}
+            </p>
+          )}
+        </div>
 
         <div
           ref={attachContentFade}
@@ -403,7 +493,7 @@ export default function SettingsModal() {
           style={contentFadeStyle}
           className="min-h-0 flex-1 overflow-y-auto"
         >
-          <div className="flex min-h-full w-full flex-col px-[20px] pt-[2px] pb-[20px] font-sans">
+          <div className="flex min-h-full w-full flex-col px-3.5 py-2 md:px-[20px] md:pt-[2px] md:pb-[20px] font-sans">
             <motion.div
               key={activeTab}
               initial={{ opacity: 0, y: 6 }}
@@ -414,13 +504,13 @@ export default function SettingsModal() {
               {activeTab === "Playback" && (
                 <PlaybackTab searchQuery={searchQuery} />
               )}
-              {activeTab === "Shortcuts" && (
+              {isElectron && activeTab === "Shortcuts" && (
                 <ShortcutsTab searchQuery={searchQuery} />
               )}
-              {activeTab === "Overlay" && (
+              {isElectron && activeTab === "Overlay" && (
                 <OverlayTab searchQuery={searchQuery} />
               )}
-              {activeTab === "Discord" && (
+              {isElectron && activeTab === "Discord" && (
                 <DiscordTab searchQuery={searchQuery} />
               )}
               {activeTab === "Youtube" && (

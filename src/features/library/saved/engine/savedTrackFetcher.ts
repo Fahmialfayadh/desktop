@@ -12,6 +12,7 @@ import { downloadAudioBytes, STREAMS_REFUSED_MESSAGE } from "@/shared/youtube";
 import type { Track } from "@/shared/types";
 import { isBetterLyricsCandidate, lyricsCache } from "@/features/lyrics";
 import { resolvePlaybackStream } from "@/features/player/engine/streamResolver";
+import { webLocalTracks } from "@/shared/storage/webLocalTracks";
 import type { FailureKind, SavedAudioSource } from "./savedTrackSync";
 
 const COVER_TIMEOUT_MS = 15_000;
@@ -133,14 +134,32 @@ export async function saveTrackToDevice(
   signal: AbortSignal,
 ): Promise<{ record: SavedTrackRecord; source: SavedAudioSource } | null> {
   const bridge = window.linerElectron;
-  if (!bridge) return null;
   const fetched =
     (await fromAudioCache(track.id)) ?? (await fromNetwork(track, signal));
   const [cover, lyrics] = await Promise.all([
     fetchCover(track.coverUrl),
     findLyrics(track).catch(() => null),
   ]);
-  const record = await bridge.savedTracksSave({
+
+  if (bridge?.savedTracksSave) {
+    const record = await bridge.savedTracksSave({
+      meta: trackToSavedMeta(track),
+      audio: fetched.audio,
+      mimeType: fetched.mimeType,
+      ...(cover ? { cover } : {}),
+      ...(lyrics?.state === "found" && lyrics.candidate
+        ? { lyricsState: "found" as const, lyrics: lyrics.candidate }
+        : lyrics?.state === "missing"
+          ? { lyricsState: "missing" as const }
+          : {}),
+    });
+    if (!record) return null;
+    if (fetched.source === "cache") await audioCache.deleteAudio(track.id);
+    return { record, source: fetched.source };
+  }
+
+  // Web fallback via webLocalTracks
+  const record = await webLocalTracks.saveTrack({
     meta: trackToSavedMeta(track),
     audio: fetched.audio,
     mimeType: fetched.mimeType,
@@ -151,7 +170,6 @@ export async function saveTrackToDevice(
         ? { lyricsState: "missing" as const }
         : {}),
   });
-  if (!record) return null;
   if (fetched.source === "cache") await audioCache.deleteAudio(track.id);
   return { record, source: fetched.source };
 }
@@ -160,7 +178,6 @@ export async function saveLyricsToDevice(
   record: SavedTrackRecord,
 ): Promise<SavedLyricsState | "later"> {
   const bridge = window.linerElectron;
-  if (!bridge) return "later";
   const found = await findLyrics({
     id: record.trackId,
     title: record.title,
@@ -168,7 +185,18 @@ export async function saveLyricsToDevice(
     durationMs: record.durationMs,
   }).catch(() => null);
   if (!found) return "later";
-  const stored = await bridge.savedTracksSetLyrics(
+
+  if (bridge?.savedTracksSetLyrics) {
+    const stored = await bridge.savedTracksSetLyrics(
+      record.trackId,
+      found.state,
+      found.candidate,
+    );
+    return stored ? found.state : "later";
+  }
+
+  // Web fallback via webLocalTracks
+  const stored = await webLocalTracks.setSavedLyrics(
     record.trackId,
     found.state,
     found.candidate,
