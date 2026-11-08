@@ -1,11 +1,9 @@
 FROM python:3.11-slim
 
-# Install ffmpeg, curl, and Node.js tarball (isolated from apt so python3 stays intact)
-ARG NODE_VERSION=22.23.4
+# Install ffmpeg and curl for stream transcoding and healthcheck
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ffmpeg curl ca-certificates xz-utils && \
-    rm -rf /var/lib/apt/lists/* && \
-    curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz | tar -xJ -C /usr/local --strip-components=1
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -15,9 +13,13 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 # Copy project source files (supports both backend/ and repository root build contexts)
 COPY . .
 
-# If built with repository root as context, move backend files into /app
+# Install Python dependencies (kept as early as possible to stay cached)
 RUN if [ -d "backend" ]; then cp -rn backend/* . ; fi && \
     uv pip install --system --no-cache -e .
+
+# Install Node.js tarball for the BotGuard PO token minter (isolated from apt)
+ARG NODE_VERSION=22.23.4
+RUN curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz | tar -xJ -C /usr/local --strip-components=1
 
 # Install the BotGuard PO token minter dependencies
 RUN cd potoken && npm install --omit=dev --no-audit --no-fund && \
