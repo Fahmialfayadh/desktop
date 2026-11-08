@@ -92,6 +92,12 @@ async function resolveYoutubeStandIn(
     "playback",
     `resolved youtube stand-in ${videoId} for "${track.title}"`,
   );
+  const liner = await resolveLinerStream(videoId, signal);
+  if (liner) {
+    const stream = fromLinerStream(liner, track);
+    stream.standIn = true;
+    return stream;
+  }
   const stream = await resolveYoutubeAudio(videoId, progressive, signal);
   stream.standIn = true;
   return stream;
