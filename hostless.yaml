@@ -4,7 +4,6 @@ build:
 
 dockerfile_path: "./backend/Dockerfile"
 build_context_directory: "./backend"
-working_directory: "/backend"
 
 health_check:
   type: "http"
