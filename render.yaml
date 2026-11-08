@@ -36,10 +36,7 @@ services:
       - key: NODE_VERSION
         value: 20.18.0
       - key: VITE_STREAM_GATEWAY_URL
-        fromService:
-          type: web
-          name: liner-stream-gateway
-          property: host
+        value: https://liner-gateway.fahmialfayadh.site
       - key: VITE_SUPABASE_URL
         sync: false
       - key: VITE_SUPABASE_ANON_KEY
