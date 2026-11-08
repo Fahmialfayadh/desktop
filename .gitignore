@@ -58,3 +58,4 @@ scratch/
 /native-build.log
 backend/**/__pycache__
 backend/**/*.pyc
+.vercel
