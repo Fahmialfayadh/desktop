@@ -1,11 +1,11 @@
 FROM python:3.11-slim
 
-# Install ffmpeg, curl, and Node.js for stream transcoding, healthcheck, and PO tokens
+# Install ffmpeg, curl, and Node.js tarball (isolated from apt so python3 stays intact)
+ARG NODE_VERSION=22.23.4
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg curl ca-certificates gnupg && \
-    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
-    apt-get install -y --no-install-recommends nodejs && \
-    rm -rf /var/lib/apt/lists/*
+    apt-get install -y --no-install-recommends ffmpeg curl ca-certificates xz-utils && \
+    rm -rf /var/lib/apt/lists/* && \
+    curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz | tar -xJ -C /usr/local --strip-components=1
 
 WORKDIR /app
 
