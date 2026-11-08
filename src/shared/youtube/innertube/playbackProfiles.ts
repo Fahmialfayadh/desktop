@@ -24,6 +24,7 @@ export const VISIONOS_PROFILE: InnertubeProfile = {
   userAgent:
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15",
   includeUserAgentInContext: true,
+  acceptsPoToken: true,
   extraContext: {
     osName: "visionOS",
     osVersion: "26.5.23O471",
@@ -40,6 +41,7 @@ export const ANDROID_VR_PROFILE: InnertubeProfile = {
   userAgent:
     "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
   includeUserAgentInContext: true,
+  acceptsPoToken: true,
   extraContext: {
     osName: "Android",
     osVersion: "12L",

@@ -53,6 +53,10 @@ GEMINI.md
 brag-output/
 scratch/
 
+# temp/debug
+scripts/tmp/
+.playwright-mcp/
+
 # native add-on build output
 /native/*/build/
 /native-build.log

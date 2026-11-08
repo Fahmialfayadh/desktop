@@ -3,10 +3,13 @@ import { getStreamGatewayUrl, getSupabaseUrl } from "./baseUrl";
 const PROXIED_ROOT_DOMAINS = [
   "youtube.com",
   "youtu.be",
+  "googlevideo.com",
   "ytimg.com",
   "ggpht.com",
   "googleusercontent.com",
   "googleapis.com",
+  "google.com",
+  "gstatic.com",
   "soundcloud.com",
   "sndcdn.com",
   "spotify.com",

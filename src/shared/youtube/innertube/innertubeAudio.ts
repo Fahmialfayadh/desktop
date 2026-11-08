@@ -1,11 +1,17 @@
 import { InnertubeError, type InnertubeProfile } from "./innertubeClient";
-import { PLAYBACK_PROFILES } from "./playbackProfiles";
+import {
+  ANDROID_VR_PROFILE,
+  PLAYBACK_PROFILES,
+  TV_PROFILE,
+  VISIONOS_PROFILE,
+} from "./playbackProfiles";
 import { log } from "@/shared/utils/logger";
 import {
   resetWebRemixSession,
   resolveWebRemixAudioStream,
 } from "./webRemixAudio";
 import { resolveWithProfile } from "./profileAudio";
+import { canMintWebPoToken, getWebPoToken } from "./webPoToken";
 import { assertStreamReachable, isStreamRefused } from "./streamProbe";
 import type { ResolvedAudioStream } from "./innertubeAudioFormats";
 
@@ -19,6 +25,16 @@ export {
 } from "./playbackProfiles";
 
 let lastWorkingProfile: InnertubeProfile | null = null;
+
+function isRealWebRuntime(): boolean {
+  return canMintWebPoToken() && import.meta.env.MODE !== "test";
+}
+
+const WEB_PLAYBACK_PROFILES: readonly InnertubeProfile[] = [
+  VISIONOS_PROFILE,
+  ANDROID_VR_PROFILE,
+  TV_PROFILE,
+];
 
 export function resetPlaybackProfilePreference(): void {
   lastWorkingProfile = null;
@@ -112,18 +128,38 @@ export async function resolveDirectAudioStream(
   const failures: string[] = [];
   let profilesTried = 0;
   let profilesRefused = 0;
-  if (!options.profiles && Date.now() >= webRemixRetryAt) {
+  const realWeb = !options.profiles && isRealWebRuntime();
+  const tokenPromise = realWeb
+    ? getWebPoToken(videoId, options.signal).catch(() => null)
+    : null;
+  const shouldTryWebRemix =
+    !options.profiles && !realWeb && Date.now() >= webRemixRetryAt;
+  if (shouldTryWebRemix) {
     const stream = await resolveViaWebRemix(videoId, options, failures);
     if (stream) return stream;
   } else if (!options.profiles) {
     failures.push(`WEB_REMIX paused: ${lastWebRemixError}`);
   }
-  for (const profile of orderedProfiles(
-    options.profiles ?? PLAYBACK_PROFILES,
-  )) {
+  const profiles =
+    options.profiles ?? (realWeb ? WEB_PLAYBACK_PROFILES : PLAYBACK_PROFILES);
+  const poToken = tokenPromise ? await tokenPromise : null;
+  const ordered = realWeb ? profiles : orderedProfiles(profiles);
+  for (const profile of ordered) {
     profilesTried += 1;
+    const profileOptions =
+      poToken && profile.acceptsPoToken
+        ? {
+            ...options,
+            poToken: poToken.poToken,
+            visitorData: poToken.visitorData,
+          }
+        : options;
     try {
-      const stream = await resolveWithProfile(videoId, profile, options);
+      const stream = await resolveWithProfile(
+        videoId,
+        profile,
+        profileOptions,
+      );
       lastWorkingProfile = profile;
       return stream;
     } catch (error) {

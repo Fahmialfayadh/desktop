@@ -1,0 +1,11 @@
+{
+  "name": "liner-potoken",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "BotGuard PO token minter for the Liner gateway",
+  "dependencies": {
+    "bgutils-js": "4.0.3",
+    "jsdom": "30.1.3"
+  }
+}

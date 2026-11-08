@@ -1,5 +1,7 @@
+import asyncio
 import ipaddress
 import socket
+import time
 import urllib.parse
 from typing import AsyncGenerator
 
@@ -26,7 +28,10 @@ FORWARDED_HEADER_NAMES = {
     "range",
     "x-goog-visitor-id",
     "x-goog-authuser",
+    "x-goog-api-key",
+    "x-goog-po-token",
     "x-origin",
+    "x-user-agent",
     "x-youtube-client-name",
     "x-youtube-client-version",
     "client-token",
@@ -45,7 +50,33 @@ HOP_BY_HOP_HEADERS = {
 }
 
 
-def validate_and_check_ssrf(url_str: str) -> urllib.parse.SplitResult:
+DNS_CACHE_TTL_SECONDS = 300
+_dns_cache: dict[str, tuple[float, tuple[str, ...]]] = {}
+_dns_locks: dict[str, asyncio.Lock] = {}
+
+
+async def resolve_host_ips(hostname: str) -> tuple[str, ...]:
+    """Resolve a hostname without blocking the event loop, caching the result briefly."""
+    now = time.monotonic()
+    cached = _dns_cache.get(hostname)
+    if cached and cached[0] > now:
+        return cached[1]
+
+    lock = _dns_locks.setdefault(hostname, asyncio.Lock())
+    async with lock:
+        cached = _dns_cache.get(hostname)
+        if cached and cached[0] > now:
+            return cached[1]
+        loop = asyncio.get_running_loop()
+        addr_info = await loop.getaddrinfo(
+            hostname, 443, proto=socket.IPPROTO_TCP
+        )
+        ips = tuple(dict.fromkeys(sockaddr[0] for *_, sockaddr in addr_info))
+        _dns_cache[hostname] = (now + DNS_CACHE_TTL_SECONDS, ips)
+        return ips
+
+
+async def validate_and_check_ssrf(url_str: str) -> urllib.parse.SplitResult:
     """Validate target URL strictly: https only, domain allowlist, no literal IP, anti-SSRF."""
     if not url_str:
         raise HTTPException(status_code=400, detail="Missing target URL")
@@ -84,12 +115,11 @@ def validate_and_check_ssrf(url_str: str) -> urllib.parse.SplitResult:
 
     # Resolve hostname to check for internal/private addresses
     try:
-        addr_info = socket.getaddrinfo(hostname, 443, proto=socket.IPPROTO_TCP)
+        ips = await resolve_host_ips(hostname)
     except socket.gaierror as exc:
         raise HTTPException(status_code=403, detail=f"Failed to resolve host '{hostname}'") from exc
 
-    for _, _, _, _, sockaddr in addr_info:
-        ip_str = sockaddr[0]
+    for ip_str in ips:
         try:
             ip = ipaddress.ip_address(ip_str)
             if (
@@ -177,7 +207,7 @@ async def execute_proxy_request(
     client = get_proxy_client(request)
 
     while True:
-        validate_and_check_ssrf(current_url)
+        await validate_and_check_ssrf(current_url)
         upstream_headers = prepare_upstream_headers(current_url, request.headers)
 
         req = client.build_request(

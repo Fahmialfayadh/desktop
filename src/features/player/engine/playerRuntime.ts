@@ -24,6 +24,17 @@ import {
 // error recovery tuning (see the audio "error" handler)
 const RECOVERY_HOLD_MS = 3000;
 const WAITING_GRACE_MS = 300; // a buffering hiccup shorter than this never shows // must play this far past a recovery before it may retry again
+const WEB_FULL_DOWNLOAD_TIMEOUT_MS = 20_000;
+const PRELOAD_AHEAD_LIMIT = 3;
+const PRELOAD_CONCURRENCY = 2;
+
+function isWebPlaybackRuntime(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    !(window as any).linerElectron &&
+    import.meta.env.MODE !== "test"
+  );
+}
 
 export class PlayerRuntime {
   private audio: HTMLAudioElement;
@@ -47,6 +58,9 @@ export class PlayerRuntime {
   private preloadingTrackId: string | null = null;
   private preloadingPromise: Promise<void> | null = null;
   private preloadAbortController: AbortController | null = null;
+  private preloadQueueController: AbortController | null = null;
+  private preloadPromises = new Map<string, Promise<void>>();
+  private lastPreloadQueueKey = "";
   private backgroundCacheAbortController: AbortController | null = null;
   private currentSessionExpiresAt: number | null = null;
   private recoveryAttempts = 0;
@@ -675,6 +689,29 @@ export class PlayerRuntime {
     log("cyan", "playback", "pending load cancelled");
   }
 
+  private async preloadOne(track: Track, signal: AbortSignal): Promise<void> {
+    if (isLocalTrackId(track.id) || isSavedTrack(track.id)) return;
+    if (this.currentTrackId === track.id || signal.aborted) return;
+
+    const cached = await linerDb.getAudio(track.id);
+    if (cached || signal.aborted) return;
+
+    const generation = audioCache.currentGeneration();
+    const stream = await resolvePlaybackStream(track, signal);
+    if (signal.aborted) return;
+
+    const blob = await this.downloadAudioBlob(stream, signal);
+    if (!blob || signal.aborted) return;
+    if (!(await audioCache.saveAudioBlob(track.id, blob, blob.type, generation)))
+      return;
+    await linerDb.putTrack(track);
+    log(
+      "green",
+      "preload",
+      `preloaded audio: "${track.title}" (${Math.round(blob.size / 1024)} KB)`,
+    );
+  }
+
   public async preloadTrack(track: Track): Promise<void> {
     if (isLocalTrackId(track.id) || isSavedTrack(track.id)) return;
     if (this.currentTrackId === track.id) return;
@@ -688,41 +725,71 @@ export class PlayerRuntime {
     this.preloadAbortController = controller;
     this.preloadingTrackId = track.id;
 
-    const generation = audioCache.currentGeneration();
-    const promise = (async () => {
-      try {
-        const stream = await resolvePlaybackStream(track, controller.signal);
-        if (controller.signal.aborted) return;
-
-        const blob = await this.downloadAudioBlob(stream, controller.signal);
-        if (!blob || controller.signal.aborted) return;
-        if (
-          !(await audioCache.saveAudioBlob(
-            track.id,
-            blob,
-            blob.type,
-            generation,
-          ))
-        )
-          return;
-        await linerDb.putTrack(track);
-        log(
-          "green",
-          "preload",
-          `preloaded audio: "${track.title}" (${Math.round(blob.size / 1024)} KB)`,
-        );
-      } catch {
-      } finally {
+    const promise = this.preloadOne(track, controller.signal)
+      .catch(() => undefined)
+      .finally(() => {
         if (this.preloadingTrackId === track.id) {
           this.preloadingTrackId = null;
           this.preloadingPromise = null;
           this.preloadAbortController = null;
         }
-      }
-    })();
+      });
 
     this.preloadingPromise = promise;
     await promise;
+  }
+
+  /**
+   * Warm the next few queue entries while the current track plays. Downloads run
+   * two at a time so the current track still gets most of the bandwidth.
+   */
+  public preloadTracks(tracks: readonly Track[]): void {
+    const unique: Track[] = [];
+    const seen = new Set<string>();
+    for (const track of tracks) {
+      if (seen.has(track.id)) continue;
+      if (isLocalTrackId(track.id) || isSavedTrack(track.id)) continue;
+      if (this.currentTrackId === track.id) continue;
+      seen.add(track.id);
+      unique.push(track);
+      if (unique.length >= PRELOAD_AHEAD_LIMIT) break;
+    }
+    if (unique.length === 0) return;
+
+    const queueKey = unique.map((track) => track.id).join(",");
+    if (queueKey === this.lastPreloadQueueKey) return;
+    this.lastPreloadQueueKey = queueKey;
+
+    this.preloadQueueController?.abort();
+    const controller = new AbortController();
+    this.preloadQueueController = controller;
+    void this.runPreloadQueue(unique, controller.signal);
+  }
+
+  private async runPreloadQueue(
+    tracks: readonly Track[],
+    signal: AbortSignal,
+  ): Promise<void> {
+    let nextIndex = 0;
+    const worker = async () => {
+      while (!signal.aborted) {
+        const track = tracks[nextIndex];
+        nextIndex += 1;
+        if (!track) return;
+        const promise = this.preloadOne(track, signal).catch(() => undefined);
+        this.preloadPromises.set(track.id, promise);
+        await promise;
+        if (this.preloadPromises.get(track.id) === promise) {
+          this.preloadPromises.delete(track.id);
+        }
+      }
+    };
+    await Promise.all(
+      Array.from(
+        { length: Math.min(PRELOAD_CONCURRENCY, tracks.length) },
+        () => worker(),
+      ),
+    );
   }
 
   private pendingStartPositionMs = 0;
@@ -773,7 +840,10 @@ export class PlayerRuntime {
       this.recoveryHoldUntilMs = null;
     }
 
-    if (this.preloadingTrackId === track.id && this.preloadingPromise) {
+    const queuedPreload = this.preloadPromises.get(track.id);
+    if (queuedPreload) {
+      await queuedPreload;
+    } else if (this.preloadingTrackId === track.id && this.preloadingPromise) {
       await this.preloadingPromise;
     } else if (this.preloadingTrackId && this.preloadingTrackId !== track.id) {
       this.preloadAbortController?.abort();
@@ -878,19 +948,88 @@ export class PlayerRuntime {
         return;
       }
 
-      const stream = await resolvePlaybackStream(track, controller.signal, {
-        progressive: true,
-      });
+      const resolvedStream = await resolvePlaybackStream(
+        track,
+        controller.signal,
+        {
+          progressive: true,
+        },
+      );
       this.ttfbMs = Math.round(performance.now() - this.loadStartTime);
 
       if (epoch !== this.loadEpoch || controller.signal.aborted) {
-        stream.release?.();
+        resolvedStream.release?.();
         log(
           "yellow",
           "playback",
           `superseded before stream ready (${track.title})`,
         );
         return;
+      }
+
+      let stream: PlaybackStream = resolvedStream;
+      let attemptedFullDownload = false;
+      if (
+        isWebPlaybackRuntime() &&
+        !resolvedStream.blob &&
+        resolvedStream.source !== "youtube-tv"
+      ) {
+        attemptedFullDownload = true;
+        const downloadController = new AbortController();
+        const downloadTimeout = setTimeout(
+          () => downloadController.abort(),
+          WEB_FULL_DOWNLOAD_TIMEOUT_MS,
+        );
+        const abortDownload = () =>
+          downloadController.abort(controller.signal.reason);
+        controller.signal.addEventListener("abort", abortDownload, {
+          once: true,
+        });
+        try {
+          const blob = await this.downloadAudioBlob(
+            resolvedStream,
+            downloadController.signal,
+          );
+          if (epoch !== this.loadEpoch || controller.signal.aborted) {
+            resolvedStream.release?.();
+            return;
+          }
+          if (blob) {
+            stream = {
+              blob,
+              source: resolvedStream.source,
+              mimeType: resolvedStream.mimeType,
+              codec: resolvedStream.codec,
+              bitrate: resolvedStream.bitrate,
+              ...(resolvedStream.contentLength
+                ? { contentLength: resolvedStream.contentLength }
+                : {}),
+              expiresAtMs: null,
+            };
+            resolvedStream.release?.();
+            const generation = audioCache.currentGeneration();
+            void audioCache
+              .saveAudioBlob(track.id, blob, blob.type, generation)
+              .then((saved) => {
+                if (saved) void linerDb.putTrack(track);
+              })
+              .catch(() => undefined);
+            log(
+              "green",
+              "playback",
+              `downloaded full audio before play (${Math.round(blob.size / 1024)} KB)`,
+            );
+          } else {
+            log(
+              "yellow",
+              "playback",
+              "full download failed, falling back to progressive stream",
+            );
+          }
+        } finally {
+          clearTimeout(downloadTimeout);
+          controller.signal.removeEventListener("abort", abortDownload);
+        }
       }
 
       const streamCodec = stream.codec;
@@ -948,7 +1087,13 @@ export class PlayerRuntime {
       if (epoch === this.loadEpoch) {
         usePlayerStore.getState().setStatus("playing");
         this.fadeVolume(usePlayerStore.getState().volume, 180);
-        this.cacheAudioInBackground(track, stream, bgCacheController.signal);
+        if (!attemptedFullDownload) {
+          this.cacheAudioInBackground(
+            track,
+            stream,
+            bgCacheController.signal,
+          );
+        }
       }
       logNowPlaying(track, false, audioStartLatencyMs);
 

@@ -20,6 +20,7 @@ export interface InnertubeProfile {
   includeUserAgentInContext?: boolean;
   requiresJsPlayer?: boolean;
   acceptsOAuth?: boolean;
+  acceptsPoToken?: boolean;
   extraContext?: Record<string, string | number>;
 }
 
@@ -55,6 +56,7 @@ export class InnertubeError extends Error {
 export interface InnertubeRequestOptions {
   profile?: InnertubeProfile;
   signal?: AbortSignal;
+  visitorData?: string;
 }
 
 function buildClientContext(
@@ -115,7 +117,8 @@ export async function postInnertube(
   const url = `${profile.origin}/youtubei/v1/${endpoint}?prettyPrint=false`;
 
   const send = async (): Promise<Response> => {
-    const visitorData = await getClientVisitorData().catch(() => "");
+    const visitorData =
+      options.visitorData ?? (await getClientVisitorData().catch(() => ""));
     const payload = {
       ...body,
       context: {

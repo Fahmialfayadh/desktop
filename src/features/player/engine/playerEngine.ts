@@ -1357,24 +1357,32 @@ class PlayerEngine {
   private preloadNextTrack(state: PlayerState): void {
     const queue = state.queue;
     const currentIndex = state.currentIndex;
-    let nextTrack: Track | null = null;
-    if (currentIndex >= 0 && currentIndex < queue.length - 1) {
-      nextTrack = queue[currentIndex + 1];
-    } else if (
+    const upcoming: Track[] = [];
+    const canWrap =
       state.repeat === "all" &&
       queue.length > 0 &&
-      !isRadioContext(state.playbackContext)
-    ) {
-      nextTrack = queue[0];
+      !isRadioContext(state.playbackContext);
+
+    for (let offset = 1; offset <= 3; offset += 1) {
+      let index = currentIndex + offset;
+      if (index >= queue.length) {
+        if (!canWrap) break;
+        index %= queue.length;
+      }
+      const track = queue[index];
+      if (!track || track.id === state.currentTrack?.id) continue;
+      if (upcoming.some((entry) => entry.id === track.id)) continue;
+      upcoming.push(track);
     }
 
+    const nextTrack = upcoming[0] ?? null;
     if (!nextTrack) {
       this.lastPreloadKey = null;
       return;
     }
 
     const currentId = state.currentTrack?.id || "none";
-    const preloadKey = `${currentId}->${nextTrack.id}`;
+    const preloadKey = `${currentId}->${upcoming.map((track) => track.id).join(",")}`;
     if (this.lastPreloadKey === preloadKey) {
       return;
     }
@@ -1395,7 +1403,7 @@ class PlayerEngine {
     void linerDb.putTrack(nextTrack);
 
     if (playerRuntime) {
-      void playerRuntime.preloadTrack(nextTrack);
+      playerRuntime.preloadTracks(upcoming);
     }
   }
 

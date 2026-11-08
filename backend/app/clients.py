@@ -6,6 +6,11 @@ _fallback_proxy_client: Optional[httpx.AsyncClient] = None
 _fallback_streamer_client: Optional[httpx.AsyncClient] = None
 
 
+def ipv4_transport() -> httpx.AsyncHTTPTransport:
+    """Force IPv4 egress so resolved googlevideo URLs and media downloads share one IP."""
+    return httpx.AsyncHTTPTransport(local_address="0.0.0.0")
+
+
 def get_proxy_client(request: Optional[Request] = None) -> httpx.AsyncClient:
     """Return shared proxy AsyncClient from app.state or fallback lazy singleton."""
     global _fallback_proxy_client
@@ -18,6 +23,7 @@ def get_proxy_client(request: Optional[Request] = None) -> httpx.AsyncClient:
         _fallback_proxy_client = httpx.AsyncClient(
             timeout=httpx.Timeout(30.0, read=120.0),
             follow_redirects=False,
+            transport=ipv4_transport(),
         )
     return _fallback_proxy_client
 
@@ -34,6 +40,7 @@ def get_streamer_client(request: Optional[Request] = None) -> httpx.AsyncClient:
         _fallback_streamer_client = httpx.AsyncClient(
             timeout=httpx.Timeout(30.0, read=120.0),
             follow_redirects=True,
+            transport=ipv4_transport(),
         )
     return _fallback_streamer_client
 

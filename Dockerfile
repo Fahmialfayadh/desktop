@@ -1,8 +1,10 @@
 FROM python:3.11-slim
 
-# Install ffmpeg and curl for stream transcoding and healthcheck
+# Install ffmpeg, curl, and Node.js for stream transcoding, healthcheck, and PO tokens
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg curl && \
+    apt-get install -y --no-install-recommends ffmpeg curl ca-certificates gnupg && \
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -17,6 +19,10 @@ COPY . .
 RUN if [ -d "backend" ]; then cp -rn backend/* . ; fi && \
     uv pip install --system --no-cache -e .
 
+# Install the BotGuard PO token minter dependencies
+RUN cd potoken && npm install --omit=dev --no-audit --no-fund && \
+    npm cache clean --force
+
 # Create temporary streaming cache directory
 RUN mkdir -p /tmp/liner-stream-cache && chmod 777 /tmp/liner-stream-cache
 
@@ -27,4 +33,4 @@ ENV FFMPEG_PATH=/usr/bin/ffmpeg
 
 EXPOSE 8787
 
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8787}"]
+CMD ["sh", "-c", "node potoken/server.mjs & uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8787}"]

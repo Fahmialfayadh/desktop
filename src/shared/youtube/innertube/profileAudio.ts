@@ -19,16 +19,22 @@ import {
 export interface ProfileAudioOptions {
   signal?: AbortSignal;
   preferredCodec?: "opus" | "aac";
+  poToken?: string;
+  visitorData?: string;
 }
 
 function playerBody(
   videoId: string,
   player: WebPlayer | null,
+  poToken?: string,
 ): Record<string, unknown> {
   return {
     videoId,
     contentCheckOk: true,
     racyCheckOk: true,
+    ...(poToken
+      ? { serviceIntegrityDimensions: { poToken } }
+      : {}),
     ...(player
       ? {
           playbackContext: {
@@ -55,13 +61,15 @@ export async function resolveWithProfile(
   options: ProfileAudioOptions,
 ): Promise<ResolvedAudioStream> {
   const player = profile.requiresJsPlayer ? await getWebPlayer() : null;
+  const poToken = profile.acceptsPoToken ? options.poToken : undefined;
   const request = () =>
-    postInnertube("player", playerBody(videoId, player), {
+    postInnertube("player", playerBody(videoId, player, poToken), {
       profile,
       signal: options.signal,
+      ...(options.visitorData ? { visitorData: options.visitorData } : {}),
     });
   let response = await request();
-  if (requiresBotCheck(response)) {
+  if (requiresBotCheck(response) && !poToken) {
     resetClientVisitorData();
     response = await request();
   }

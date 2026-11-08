@@ -4,9 +4,10 @@ from fastapi.middleware.cors import CORSMiddleware
 import httpx
 import uvicorn
 
-from app.clients import close_fallback_clients
+from app.clients import close_fallback_clients, ipv4_transport
 from app.config import CORS_ALLOW_ORIGINS, HOST, PORT
 from app.proxy import router as proxy_router
+from app.potoken import router as potoken_router
 from app.streamer import router as streamer_router
 
 
@@ -16,10 +17,12 @@ async def lifespan(app: FastAPI):
     proxy_client = httpx.AsyncClient(
         timeout=httpx.Timeout(30.0, read=120.0),
         follow_redirects=False,
+        transport=ipv4_transport(),
     )
     streamer_client = httpx.AsyncClient(
         timeout=httpx.Timeout(30.0, read=120.0),
         follow_redirects=True,
+        transport=ipv4_transport(),
     )
     app.state.proxy_client = proxy_client
     app.state.streamer_client = streamer_client
@@ -62,6 +65,7 @@ app.add_middleware(
 )
 
 app.include_router(proxy_router)
+app.include_router(potoken_router)
 app.include_router(streamer_router)
 
 

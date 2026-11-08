@@ -33,6 +33,8 @@ ALLOWED_DOMAINS: tuple[str, ...] = (
     "ggpht.com",
     "googleusercontent.com",
     "googleapis.com",
+    "google.com",
+    "gstatic.com",
     "soundcloud.com",
     "sndcdn.com",
     "spotify.com",
