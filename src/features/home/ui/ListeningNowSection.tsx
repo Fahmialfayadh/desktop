@@ -1,6 +1,7 @@
 import { memo, type ReactNode } from "react";
 import { playerEngine } from "@/features/player";
 import SongCardWithMenu from "@/features/player/ui/SongCardWithMenu";
+import { useDisplaySettingsStore } from "@/features/settings";
 import type { Track } from "@/shared/types";
 import SectionHeading from "./SectionHeading";
 
@@ -24,6 +25,8 @@ function ListeningNowSection({
   tracks,
   headingMarginTop,
 }: ListeningNowSectionProps) {
+  const compactMode = useDisplaySettingsStore((s) => s.compactMode);
+
   return (
     <section className="flex flex-col">
       <SectionHeading title={title} icon={icon} marginTop={headingMarginTop} />
@@ -41,6 +44,8 @@ function ListeningNowSection({
             duration={formatDuration(track.durationMs)}
             durationMs={track.durationMs}
             explicit={track.explicit}
+            hideCover={compactMode}
+            compact={compactMode}
             onPlay={() =>
               void playerEngine.playTrack(track, tracks, title, track.coverUrl)
             }

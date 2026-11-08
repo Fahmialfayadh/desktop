@@ -174,25 +174,29 @@ export function getAuthErrorCode(error: unknown): string {
   if (error.status === 0) return "server_unavailable";
   // 5xx and cloudflare 52x: the server is down, not the user's input or connection
   if (error.status >= 500) return "server_error";
-  if (error.code === "INVALID_CREDENTIALS") return "invalid_credentials";
-  if (error.code === "EMAIL_ALREADY_USED") return "email_already_used";
-  if (error.code === "USERNAME_TAKEN") return "username_taken";
-  if (error.code === "INVALID_USERNAME") return "invalid_username";
-  if (error.code === "INVALID_INPUT") return "invalid_input";
+  const codeUpper = error.code?.toUpperCase();
+  if (codeUpper === "INVALID_CREDENTIALS" || codeUpper === "INVALID_GRANT") return "invalid_credentials";
+  if (codeUpper === "EMAIL_ALREADY_USED" || codeUpper === "USER_ALREADY_EXISTS") return "email_already_used";
+  if (codeUpper === "USERNAME_TAKEN") return "username_taken";
+  if (codeUpper === "INVALID_USERNAME") return "invalid_username";
+  if (codeUpper === "INVALID_INPUT") return "invalid_input";
   if (error.code?.startsWith("TURNSTILE_")) return "human_check_failed";
   return "unknown_error";
 }
 
 export function authErrorMessage(error: unknown): string {
   if (!(error instanceof ApiError)) return "Unable to reach the server.";
-  if (error.code === "INVALID_CREDENTIALS")
+  const codeUpper = error.code?.toUpperCase();
+  if (codeUpper === "INVALID_CREDENTIALS" || codeUpper === "INVALID_GRANT")
     return "Email or password is incorrect.";
-  if (error.code === "EMAIL_ALREADY_USED")
+  if (codeUpper === "EMAIL_ALREADY_USED" || codeUpper === "USER_ALREADY_EXISTS")
     return "This email is already in use.";
-  if (error.code === "USERNAME_TAKEN")
+  if (codeUpper === "USERNAME_TAKEN")
     return "This username is already taken. Please choose another.";
-  if (error.code === "INVALID_USERNAME")
+  if (codeUpper === "INVALID_USERNAME")
     return "Username must be 3-30 lowercase characters (a-z, 0-9, _).";
-  // unknown api errors stay generic, never surface raw bodies
+  if (error.message && error.message !== "Auth request failed" && error.message !== "Database request failed") {
+    return error.message;
+  }
   return "Something went wrong. Please try again.";
 }

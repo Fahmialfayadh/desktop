@@ -3,4 +3,6 @@ export { default as SettingsPage } from "./ui/SettingsModal";
 export * from "./ui/tabs";
 
 export * from "./store/customizationStore";
+export * from "./store/displaySettingsStore";
 export * from "./hooks/useThemeCustomizationSync";
+export * from "./hooks/useDisplaySettingsSync";

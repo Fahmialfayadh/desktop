@@ -803,6 +803,12 @@
     },
     "connection": {
       "open_folder": "Apri la posizione di salvataggio"
+    },
+    "compact_mode": {
+      "title": "Modalità compatta"
+    },
+    "zoom": {
+      "title": "Zoom"
     }
   },
   "toast": {

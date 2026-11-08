@@ -803,6 +803,12 @@
     },
     "connection": {
       "open_folder": "Kaydedilen konumu aç"
+    },
+    "compact_mode": {
+      "title": "Kompakt mod"
+    },
+    "zoom": {
+      "title": "Yakınlaştırma"
     }
   },
   "toast": {

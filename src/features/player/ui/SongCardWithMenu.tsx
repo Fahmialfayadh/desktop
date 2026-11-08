@@ -23,6 +23,7 @@ export interface SongCardWithMenuProps {
   releaseDate?: string;
   explicit?: boolean;
   hideArtists?: boolean;
+  hideCover?: boolean;
   imageShape?: "square" | "circle";
   trackNumber?: number;
   repostedBy?: string;
@@ -57,6 +58,7 @@ function SongCardWithMenu({
   releaseDate,
   explicit,
   hideArtists,
+  hideCover,
   imageShape,
   trackNumber,
   repostedBy,
@@ -178,6 +180,7 @@ function SongCardWithMenu({
       releaseDate={releaseDate}
       explicit={explicit}
       hideArtists={hideArtists}
+      hideCover={hideCover}
       imageShape={imageShape}
       trackNumber={trackNumber}
       repostedBy={repostedBy}

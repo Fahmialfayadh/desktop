@@ -757,6 +757,12 @@
       "dark": "Gelap",
       "system": "Sistem"
     },
+    "compact_mode": {
+      "title": "Mode ringkas"
+    },
+    "zoom": {
+      "title": "Ukuran"
+    },
     "branding": {
       "title": "Branding",
       "description": "Pilih warna aksen logo.",

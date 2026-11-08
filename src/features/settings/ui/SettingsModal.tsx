@@ -29,6 +29,7 @@ import {
   YoutubeTab,
 } from "./tabs";
 import { SettingsSidebar, type SettingsNavIconProps } from "./SettingsSidebar";
+import { SettingsUserFooter } from "./SettingsUserFooter";
 
 type TabId =
   | "Playback"
@@ -212,8 +213,20 @@ const SETTING_ITEMS: { tabId: TabId; titleKey: string; descKey?: string }[] = [
   },
   {
     tabId: "Appearance",
+    titleKey: "settings.compact_mode.title",
+  },
+  {
+    tabId: "Appearance",
+    titleKey: "settings.zoom.title",
+  },
+  {
+    tabId: "Appearance",
     titleKey: "settings.theme.title",
     descKey: "settings.theme.description",
+  },
+  {
+    tabId: "Appearance",
+    titleKey: "common.sign_out",
   },
 
   // Storage
@@ -525,6 +538,11 @@ export default function SettingsModal() {
               {activeTab === "About" && <AboutTab searchQuery={searchQuery} />}
             </motion.div>
           </div>
+        </div>
+
+        {/* Mobile footer with user profile and sign out */}
+        <div className="md:hidden shrink-0 border-t border-border-primary/40 bg-bg-panel/40">
+          <SettingsUserFooter onClose={handleClose} />
         </div>
       </div>
     </Dialog>

@@ -923,6 +923,12 @@
       "dark": "Dark",
       "system": "System"
     },
+    "compact_mode": {
+      "title": "Compact mode"
+    },
+    "zoom": {
+      "title": "Size"
+    },
     "branding": {
       "title": "Branding",
       "description": "Choose the logo accent color.",

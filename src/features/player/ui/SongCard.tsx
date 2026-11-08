@@ -40,6 +40,7 @@ export interface SongCardProps {
   /** search query whose matches get marked in the title */
   highlight?: string;
   hideArtists?: boolean;
+  hideCover?: boolean;
   trailingAction?: React.ReactNode;
 }
 
@@ -70,6 +71,7 @@ function SongCard({
   onGrabStart,
   highlight,
   hideArtists = false,
+  hideCover = false,
   trailingAction,
 }: SongCardProps) {
   const { t } = useTranslation();
@@ -158,7 +160,7 @@ function SongCard({
       role={onPlay ? "button" : undefined}
       tabIndex={onPlay ? 0 : undefined}
     >
-      <div className={`flex items-center ${gapClass} min-w-0`}>
+      <div className={`flex items-center ${hideCover ? "" : gapClass} min-w-0`}>
         {trackNumber !== undefined ? (
           <div
             className={`flex ${imageSizeClass} shrink-0 items-center justify-center ${titleSizeClass} text-text-tertiary`}
@@ -168,7 +170,7 @@ function SongCard({
           >
             {trackNumber}
           </div>
-        ) : (
+        ) : hideCover ? null : (
           <div
             className={`relative ${imageSizeClass} shrink-0 overflow-hidden bg-bg-panel flex items-center justify-center ${
               imageShape === "circle" ? "rounded-full" : "rounded-control"
@@ -248,7 +250,9 @@ function SongCard({
         </div>
       </div>
 
-      <div className="flex items-center shrink-0 ml-[16px] gap-[16px]">
+      <div
+        className={`flex items-center shrink-0 ${compact ? "ml-[8px] gap-[8px]" : "ml-[16px] gap-[16px]"}`}
+      >
         {releaseDate && (
           <span
             className="text-label text-text-tertiary"

@@ -748,6 +748,12 @@
     },
     "connection": {
       "open_folder": "Speicherort öffnen"
+    },
+    "compact_mode": {
+      "title": "Kompakter Modus"
+    },
+    "zoom": {
+      "title": "Zoom"
     }
   },
   "toast": {

@@ -857,6 +857,12 @@
       "scope_main_app": "App principal",
       "scope_overlay": "Superposición",
       "reset_section": "Restablecer sección"
+    },
+    "compact_mode": {
+      "title": "Modo compacto"
+    },
+    "zoom": {
+      "title": "Zoom"
     }
   },
   "toast": {

@@ -807,6 +807,12 @@
     },
     "connection": {
       "open_folder": "Otwórz lokalizację zapisu"
+    },
+    "compact_mode": {
+      "title": "Tryb kompaktowy"
+    },
+    "zoom": {
+      "title": "Powiększenie"
     }
   },
   "toast": {

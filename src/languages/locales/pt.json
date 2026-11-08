@@ -866,6 +866,12 @@
     },
     "connection": {
       "open_folder": "Abrir local salvo"
+    },
+    "compact_mode": {
+      "title": "Modo compacto"
+    },
+    "zoom": {
+      "title": "Zoom"
     }
   },
   "toast": {

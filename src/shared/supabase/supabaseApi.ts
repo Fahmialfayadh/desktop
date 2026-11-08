@@ -151,6 +151,10 @@ export const supabaseApi = {
     }
 
     const authRes = await supabaseAuthRequest<{
+      access_token?: string;
+      refresh_token?: string;
+      expires_in?: number;
+      expires_at?: number;
       user: { id: string; email?: string };
       session?: {
         access_token: string;
@@ -170,15 +174,19 @@ export const supabaseApi = {
       }),
     });
 
-    if (!authRes.session?.access_token) {
+    const token = authRes.session?.access_token || authRes.access_token;
+    const refreshToken = authRes.session?.refresh_token || authRes.refresh_token;
+    const expiresIn = authRes.session?.expires_in || authRes.expires_in || 3600;
+    const expiresAt = authRes.session?.expires_at || authRes.expires_at;
+
+    if (!token) {
       throw new ApiError(
         400,
-        "Account created. Please confirm your email in Supabase or disable Confirm Email in Supabase Auth settings.",
+        "Account created. Please check your email to confirm your account before signing in.",
         "EMAIL_NOT_CONFIRMED",
       );
     }
 
-    const token = authRes.session.access_token;
     const userId = authRes.user.id;
     const now = new Date().toISOString();
 
@@ -216,13 +224,13 @@ export const supabaseApi = {
       updated_at: now,
     };
 
-    const expiresAtMs = authRes.session.expires_at
-      ? authRes.session.expires_at * 1000
-      : Date.now() + (authRes.session.expires_in || 3600) * 1000;
+    const expiresAtMs = expiresAt
+      ? expiresAt * 1000
+      : Date.now() + expiresIn * 1000;
 
     return {
       accessToken: token,
-      refreshToken: authRes.session.refresh_token,
+      refreshToken: refreshToken || "",
       accessTokenExpiresAt: new Date(expiresAtMs).toISOString(),
       expiresAt: expiresAtMs,
       user: profileToPublicUser(profile),

@@ -978,6 +978,12 @@
         "disabled": "Désactivé",
         "via_arrpc": "Connecté via arRPC"
       }
+    },
+    "compact_mode": {
+      "title": "Mode compact"
+    },
+    "zoom": {
+      "title": "Zoom"
     }
   },
   "toast": {

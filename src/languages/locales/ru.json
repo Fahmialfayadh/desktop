@@ -1087,6 +1087,12 @@
     },
     "connection": {
       "open_folder": "Открыть папку с отчётом"
+    },
+    "compact_mode": {
+      "title": "Компактный режим"
+    },
+    "zoom": {
+      "title": "Масштаб"
     }
   },
   "toast": {
