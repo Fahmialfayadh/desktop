@@ -194,13 +194,14 @@ def _sync_extract_info(video_id: str) -> dict:
         "no_warnings": True,
         "noplaylist": True,
         "extract_flat": False,
-        "format": "bestaudio/best",
+        "format": "bestaudio/18/best",
         "cachedir": False,
         "source_address": "0.0.0.0",
         "js_runtimes": {"node": {}},
+        "remote_components": ["ejs:github"],
         "extractor_args": {
             "youtube": {
-                "player_client": ["visionos", "android_vr", "android"],
+                "player_client": ["visionos", "android"],
             }
         },
     }
@@ -210,12 +211,27 @@ def _sync_extract_info(video_id: str) -> dict:
     except Exception:
         po_token, visitor_data = _fetch_potoken_sync(video_id)
         if po_token:
-            ydl_opts["extractor_args"]["youtube"]["player_client"] = ["web"]
-            ydl_opts["extractor_args"]["youtube"]["po_token"] = [f"web+{po_token}"]
+            ydl_opts_pot = {
+                "quiet": True,
+                "no_warnings": True,
+                "noplaylist": True,
+                "extract_flat": False,
+                "format": "bestaudio/18/best",
+                "cachedir": False,
+                "source_address": "0.0.0.0",
+                "js_runtimes": {"node": {}},
+                "remote_components": ["ejs:github"],
+                "extractor_args": {
+                    "youtube": {
+                        "player_client": ["android"],
+                        "po_token": [f"android.gvs+{po_token}"],
+                    }
+                },
+            }
             if visitor_data:
-                ydl_opts["extractor_args"]["youtube"]["visitor_data"] = [visitor_data]
+                ydl_opts_pot["extractor_args"]["youtube"]["visitor_data"] = [visitor_data]
             try:
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                with yt_dlp.YoutubeDL(ydl_opts_pot) as ydl:
                     return ydl.extract_info(url, download=False)
             except Exception:
                 pass
@@ -471,6 +487,7 @@ async def proxy_upstream_stream(
     if resp.status_code == 403:
         await resp.aclose()
         await stream_cache.evict(f"{video_id}:m4a")
+        await stream_cache.evict(f"{video_id}:mp3")
         new_entry = await extract_video_stream(video_id, force_refresh=True)
         if new_entry.local_file_path:
             return await serve_file_with_range(
@@ -483,9 +500,10 @@ async def proxy_upstream_stream(
         resp = await client.send(req, stream=True)
 
     out_headers = filter_response_headers(resp.headers)
-    out_headers["Accept-Ranges"] = "bytes"
-    if not out_headers.get("Content-Type"):
-        out_headers["Content-Type"] = entry.mime_type
+    out_headers["accept-ranges"] = "bytes"
+    has_ct = any(k.lower() == "content-type" for k in out_headers)
+    if not has_ct:
+        out_headers["content-type"] = entry.mime_type
 
     if method == "HEAD":
         await resp.aclose()
