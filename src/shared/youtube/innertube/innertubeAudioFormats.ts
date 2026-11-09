@@ -19,7 +19,7 @@ export interface ResolvedAudioStream {
   contentLength?: number;
 }
 
-const PREFERRED_ITAGS = [251, 140, 250, 249, 139];
+const PREFERRED_ITAGS = [251, 140, 250, 249, 139, 18];
 
 function toAudioFormat(raw: unknown): AudioFormat | null {
   const format = asRecord(raw);
@@ -36,7 +36,11 @@ function toAudioFormat(raw: unknown): AudioFormat | null {
     (!url && !signatureCipher)
   )
     return null;
-  if (!mimeType.startsWith("audio/")) return null;
+  const isAudio =
+    mimeType.startsWith("audio/") ||
+    mimeType.includes("mp4a") ||
+    mimeType.includes("opus");
+  if (!isAudio) return null;
   const bitrate =
     typeof format.bitrate === "number"
       ? format.bitrate
@@ -56,7 +60,11 @@ function toAudioFormat(raw: unknown): AudioFormat | null {
 
 export function extractAudioFormats(playerResponse: unknown): AudioFormat[] {
   const streamingData = asRecord(asRecord(playerResponse)?.streamingData);
-  return asArray(streamingData?.adaptiveFormats)
+  const rawList = [
+    ...asArray(streamingData?.adaptiveFormats),
+    ...asArray(streamingData?.formats),
+  ];
+  return rawList
     .map(toAudioFormat)
     .filter((format): format is AudioFormat => Boolean(format));
 }
@@ -89,9 +97,11 @@ function expiryFromUrl(url: string): string | null {
 export function toResolvedStream(format: AudioFormat): ResolvedAudioStream {
   const isOpus =
     format.mimeType.includes("opus") || format.mimeType.includes("webm");
+  const rawMime = format.mimeType.split(";")[0]?.trim() || "audio/webm";
+  const mimeType = rawMime === "video/mp4" ? "audio/mp4" : rawMime;
   return {
     url: format.url,
-    mimeType: format.mimeType.split(";")[0]?.trim() || "audio/webm",
+    mimeType,
     codec: isOpus ? "opus" : "aac",
     bitrate: format.bitrate || 160_000,
     itag: format.itag,

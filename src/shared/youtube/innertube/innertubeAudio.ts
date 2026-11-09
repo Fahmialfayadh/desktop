@@ -1,5 +1,6 @@
 import { InnertubeError, type InnertubeProfile } from "./innertubeClient";
 import {
+  ANDROID_PROFILE,
   ANDROID_VR_PROFILE,
   PLAYBACK_PROFILES,
   TV_PROFILE,
@@ -18,6 +19,7 @@ import type { ResolvedAudioStream } from "./innertubeAudioFormats";
 export type { ResolvedAudioStream } from "./innertubeAudioFormats";
 
 export {
+  ANDROID_PROFILE,
   ANDROID_VR_PROFILE,
   PLAYBACK_PROFILES,
   TV_PROFILE,
@@ -31,6 +33,7 @@ function isRealWebRuntime(): boolean {
 }
 
 const WEB_PLAYBACK_PROFILES: readonly InnertubeProfile[] = [
+  ANDROID_PROFILE,
   VISIONOS_PROFILE,
   ANDROID_VR_PROFILE,
   TV_PROFILE,

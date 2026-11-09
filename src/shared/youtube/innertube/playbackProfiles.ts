@@ -1,5 +1,20 @@
 import type { InnertubeProfile } from "./innertubeClient";
 
+export const ANDROID_PROFILE: InnertubeProfile = {
+  clientName: "ANDROID",
+  clientVersion: "21.26.364",
+  clientIdHeader: "3",
+  origin: "https://www.youtube.com",
+  userAgent:
+    "com.google.android.youtube/21.26.364 (Linux; U; Android 11) gzip",
+  includeUserAgentInContext: true,
+  extraContext: {
+    androidSdkVersion: 30,
+    osName: "Android",
+    osVersion: "11",
+  },
+};
+
 export const TV_PROFILE: InnertubeProfile = {
   clientName: "TVHTML5",
   clientVersion: "7.20260707.07.00",
@@ -55,4 +70,5 @@ export const PLAYBACK_PROFILES: readonly InnertubeProfile[] = [
   TV_PROFILE,
   VISIONOS_PROFILE,
   ANDROID_VR_PROFILE,
+  ANDROID_PROFILE,
 ];
