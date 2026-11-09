@@ -522,7 +522,12 @@ export class PlayerRuntime {
         isReverbEnabled ||
         isEqActive(isEqEnabled, eqGains) ||
         (!isPitchLinked && Math.abs(pitchSemitones) >= 0.05);
-      if (!needsEffects && !pitchShifter.isAttached()) return;
+      if (!needsEffects) {
+        if (pitchShifter.isAttached()) {
+          this.recycleAudioElementForNativeHardware();
+        }
+        return;
+      }
       pitchShifter.attach(this.audio);
       pitchShifter.update({
         pitchSemitones,
@@ -534,6 +539,58 @@ export class PlayerRuntime {
       });
     } catch (err) {
       console.error("[PlayerRuntime] applyPlaybackRateAndPitch error:", err);
+    }
+  }
+
+  private recycleAudioElementForNativeHardware(): void {
+    if (typeof window === "undefined") return;
+    const oldAudio = this.audio;
+    if (!oldAudio) return;
+
+    try {
+      const currentSrc = oldAudio.src;
+      const currentTime = oldAudio.currentTime;
+      const volume = oldAudio.volume;
+      const playbackRate = oldAudio.playbackRate;
+      const isPaused = oldAudio.paused;
+
+      pitchShifter.detach(oldAudio);
+
+      // Clean up old audio DOM element
+      oldAudio.pause();
+      oldAudio.removeAttribute("src");
+      oldAudio.load();
+      try {
+        oldAudio.remove();
+      } catch {}
+
+      // Create pristine native audio element without WebAudio binding
+      const newAudio = new Audio();
+      newAudio.id = "liner-audio";
+      newAudio.crossOrigin = "anonymous";
+      newAudio.preload = "auto";
+      newAudio.volume = volume;
+      newAudio.playbackRate = playbackRate;
+
+      if (typeof document !== "undefined") {
+        document.body.appendChild(newAudio);
+      }
+      (window as any).__liner_audio = newAudio;
+      this.audio = newAudio;
+      this.setupAudioListeners(newAudio);
+
+      if (currentSrc && currentSrc !== window.location.href) {
+        newAudio.src = currentSrc;
+        if (Number.isFinite(currentTime) && currentTime > 0) {
+          newAudio.currentTime = currentTime;
+        }
+        if (!isPaused) {
+          void newAudio.play().catch(() => {});
+        }
+      }
+      log("cyan", "audio", "recycled audio element for native hardware speaker DSP");
+    } catch (err) {
+      console.warn("[PlayerRuntime] recycleAudioElement failed:", err);
     }
   }
 

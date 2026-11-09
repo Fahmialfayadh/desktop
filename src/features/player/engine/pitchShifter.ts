@@ -231,6 +231,7 @@ interface AudioEffectsGraph {
   eqFilters: BiquadFilterNode[];
   eqChainGain: GainNode;
   eqBypassGain: GainNode;
+  destinationNode: AudioNode;
   eqConnected: boolean;
   teardowns: Record<BranchName, ReturnType<typeof setTimeout> | null>;
 }
@@ -343,7 +344,7 @@ function setEqStage(
     cancelTeardown(graph, "eq");
     if (!graph.eqConnected) {
       graph.masterOutputGain.connect(graph.eqPreamp);
-      graph.eqChainGain.connect(graph.ctx.destination);
+      graph.eqChainGain.connect(graph.destinationNode);
       graph.eqConnected = true;
     }
   }
@@ -364,7 +365,7 @@ function setEqStage(
     if (!graph.eqConnected) return;
     graph.eqConnected = false;
     graph.masterOutputGain.disconnect(graph.eqPreamp);
-    graph.eqChainGain.disconnect(graph.ctx.destination);
+    graph.eqChainGain.disconnect(graph.destinationNode);
   });
 }
 
@@ -461,7 +462,22 @@ function buildGraph(
   eqTail.connect(eqChainGain);
 
   masterOutputGain.connect(eqBypassGain);
-  eqBypassGain.connect(ctx.destination);
+
+  const isMobile =
+    typeof navigator !== "undefined" &&
+    /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
+
+  let destinationNode: AudioNode = ctx.destination;
+  if (isMobile) {
+    const speakerWarmth = ctx.createBiquadFilter();
+    speakerWarmth.type = "lowshelf";
+    speakerWarmth.frequency.value = 180;
+    speakerWarmth.gain.value = 3.5;
+    speakerWarmth.connect(ctx.destination);
+    destinationNode = speakerWarmth;
+  }
+
+  eqBypassGain.connect(destinationNode);
 
   return {
     version: GRAPH_VERSION,
@@ -482,6 +498,7 @@ function buildGraph(
     eqFilters,
     eqChainGain,
     eqBypassGain,
+    destinationNode,
     eqConnected: false,
     teardowns: { pitch: null, reverb: null, eq: null },
   };
@@ -592,6 +609,35 @@ export class PitchShifterController {
 
   public isAttached(): boolean {
     return this.isConnected;
+  }
+
+  public detach(audio?: HTMLAudioElement): void {
+    this.clearSuspendTimer();
+    if (this.graph) {
+      disposeStaleGraph(this.graph);
+      this.graph = null;
+    }
+    const targetAudio = audio || this.audio;
+    if (targetAudio) {
+      const audioObj = targetAudio as any;
+      delete audioObj.__liner_source_node;
+      delete audioObj.__liner_pitch_graph;
+      delete audioObj.__liner_effects_owner;
+      const listeners = audioObj.__liner_effects_listeners as
+        [string, EventListener][] | undefined;
+      for (const [type, listener] of listeners ?? []) {
+        targetAudio.removeEventListener(type, listener);
+      }
+      delete audioObj.__liner_effects_listeners;
+    }
+    if (typeof window !== "undefined") {
+      const win = window as any;
+      delete win.__liner_media_source_node;
+      delete win.__liner_pitch_graph;
+    }
+    this.sourceNode = null;
+    this.audio = null;
+    this.isConnected = false;
   }
 
   public resumeContext(): void {
