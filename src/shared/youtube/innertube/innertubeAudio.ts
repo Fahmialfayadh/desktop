@@ -181,18 +181,7 @@ export async function resolveDirectAudioStream(
       failures.push(
         `${profile.clientName}: ${error instanceof Error ? error.message : String(error)}`,
       );
-      const msg = (
-        error instanceof Error ? error.message : String(error)
-      ).toLowerCase();
-      if (
-        realWeb &&
-        (msg.includes("not a bot") ||
-          msg.includes("login_required") ||
-          msg.includes("sign in to confirm") ||
-          msg.includes("bot check"))
-      ) {
-        break;
-      }
+      // Continue to next profile (e.g. profiles with PO token) if one profile triggers bot check
     }
   }
   if (profilesTried > 0 && profilesRefused === profilesTried)

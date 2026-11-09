@@ -44,13 +44,20 @@ export async function resolveInvidiousAudioStream(
           ? "mp4a.40.2"
           : "opus";
 
-      // Verify stream is actually reachable (not 403 IP-bound by Google CDN)
-      const probeRes = await fetch(best.url, {
-        method: "HEAD",
-        signal: combined,
-      });
-      if (!probeRes.ok) {
-        throw new Error(`stream returned HTTP ${probeRes.status}`);
+      // In non-browser environments (Node/Electron), verify stream is reachable (not 403 IP-bound by Google CDN)
+      if (typeof window === "undefined" || (window as any).linerElectron) {
+        try {
+          const probeRes = await fetch(best.url, {
+            method: "HEAD",
+            signal: combined,
+          });
+          if (!probeRes.ok) {
+            throw new Error(`stream returned HTTP ${probeRes.status}`);
+          }
+        } catch (probeErr) {
+          if (combined.aborted) throw probeErr;
+          throw new Error(`stream probe failed: ${String(probeErr)}`);
+        }
       }
 
       return {

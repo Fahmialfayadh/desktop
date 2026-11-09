@@ -635,6 +635,11 @@ export class PitchShifterController {
       delete win.__liner_media_source_node;
       delete win.__liner_pitch_graph;
     }
+    if (this.context && this.context.state !== "closed") {
+      try {
+        void this.context.suspend();
+      } catch {}
+    }
     this.sourceNode = null;
     this.audio = null;
     this.isConnected = false;

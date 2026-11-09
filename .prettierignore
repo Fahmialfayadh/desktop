@@ -5,3 +5,5 @@ release
 pnpm-lock.yaml
 electron/signer.ts
 src/assets/animations
+backend
+

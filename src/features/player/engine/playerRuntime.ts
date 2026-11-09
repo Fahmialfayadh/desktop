@@ -567,7 +567,6 @@ export class PlayerRuntime {
       // Create pristine native audio element without WebAudio binding
       const newAudio = new Audio();
       newAudio.id = "liner-audio";
-      newAudio.crossOrigin = "anonymous";
       newAudio.preload = "auto";
       newAudio.volume = volume;
       newAudio.playbackRate = playbackRate;
