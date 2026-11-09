@@ -143,45 +143,32 @@ def _fetch_potoken_sync(video_id: str) -> tuple[Optional[str], Optional[str]]:
 
 
 def _sync_extract_info(video_id: str) -> dict:
-    po_token, visitor_data = _fetch_potoken_sync(video_id)
-    extractor_args = {
-        "youtube": {
-            "player_client": ["android"],
-            "player_skip": ["webpage", "configs", "initial_data"],
-        }
-    }
-    if po_token:
-        extractor_args["youtube"]["po_token"] = [f"android.gvs+{po_token}"]
-    if visitor_data:
-        extractor_args["youtube"]["visitor_data"] = [visitor_data]
-
+    url = f"https://www.youtube.com/watch?v={video_id}"
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
         "extract_flat": False,
-        "format": "bestaudio/18/best",
+        "format": "bestaudio/best",
         "cachedir": False,
         "source_address": "0.0.0.0",
-        "js_runtimes": {"node": {}},
-        "remote_components": ["ejs:github"],
-        "extractor_args": extractor_args,
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            return ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
-    except Exception as exc:
-        if not po_token:
-            # If initial run had no PO token, try fetching again and retrying
-            po_token, visitor_data = _fetch_potoken_sync(video_id)
-            if po_token:
-                extractor_args["youtube"]["po_token"] = [f"android.gvs+{po_token}"]
-                if visitor_data:
-                    extractor_args["youtube"]["visitor_data"] = [visitor_data]
-                ydl_opts["extractor_args"] = extractor_args
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    return ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
-        raise exc
+            return ydl.extract_info(url, download=False)
+    except Exception:
+        po_token, visitor_data = _fetch_potoken_sync(video_id)
+        if po_token:
+            ydl_opts["extractor_args"] = {
+                "youtube": {
+                    "player_client": ["web"],
+                    "po_token": [f"web+{po_token}"],
+                    **({"visitor_data": [visitor_data]} if visitor_data else {}),
+                }
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                return ydl.extract_info(url, download=False)
+        raise
 
 
 def _sync_transcode_to_file(
