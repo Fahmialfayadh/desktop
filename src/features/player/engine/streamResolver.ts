@@ -116,7 +116,7 @@ async function resolveSoundCloudFallback(
       .filter(({ ranked }) => !ranked.isDisqualified && ranked.versionMatches)
       .sort((a, b) => b.ranked.score - a.ranked.score);
 
-    for (const { hit } of rankedHits.slice(0, 3)) {
+    for (const { hit } of rankedHits.slice(0, 8)) {
       try {
         const scStream = fromSoundCloudStream(
           await resolveSoundCloudStream(hit.track.id, { signal }),
