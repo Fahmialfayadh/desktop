@@ -140,6 +140,7 @@ def _sync_extract_info(video_id: str) -> dict:
         "cachedir": False,
         "js_runtimes": {"node": {}},
         "remote_components": ["ejs:github"],
+        "extractor_args": {"youtube": {"player_client": ["android", "mweb"]}},
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         return ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
@@ -495,6 +496,7 @@ def _sync_download_mp3(video_id: str, output_path: str, title: Optional[str], ar
         "outtmpl": output_path.replace(".mp3", ".%(ext)s"),
         "js_runtimes": {"node": {}},
         "remote_components": ["ejs:github"],
+        "extractor_args": {"youtube": {"player_client": ["android", "mweb"]}},
         "postprocessors": [
             {
                 "key": "FFmpegExtractAudio",
