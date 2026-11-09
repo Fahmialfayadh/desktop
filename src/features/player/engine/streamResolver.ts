@@ -62,6 +62,7 @@ async function resolveTvAudio(
 
 async function resolveYoutubeAudio(
   videoId: string,
+  track: PlayableTrack,
   progressive: boolean,
   signal?: AbortSignal,
 ): Promise<PlaybackStream> {
@@ -78,6 +79,11 @@ async function resolveYoutubeAudio(
       if (isAbortError(error, signal)) throw error;
       log("yellow", "playback", `youtube tv playback failed: ${String(error)}`);
     }
+  }
+  const liner = await resolveLinerStream(videoId, signal);
+  if (liner) {
+    log("cyan", "playback", `resolved liner audio (gateway) for "${track.title}"`);
+    return fromLinerStream(liner, track);
   }
   return fromInnertubeStream(
     await resolveDirectAudioStream(videoId, { signal }),
@@ -172,15 +178,8 @@ async function resolveYoutubeStandIn(
     "playback",
     `resolved youtube stand-in ${videoId} for "${track.title}"`,
   );
-  const liner = await resolveLinerStream(videoId, signal);
-  if (liner) {
-    const stream = fromLinerStream(liner, track);
-    stream.standIn = true;
-    return stream;
-  }
-
   try {
-    const stream = await resolveYoutubeAudio(videoId, progressive, signal);
+    const stream = await resolveYoutubeAudio(videoId, track, progressive, signal);
     stream.standIn = true;
     return stream;
   } catch (ytError) {
@@ -231,26 +230,8 @@ async function resolveYoutubeTrack(
     );
   const videoId = songId ?? rowVideoId;
 
-  // 1. Primary: Personal Liner Gateway (datacenter-safe yt-dlp visionos/android_vr/android proxy)
-  const liner = await resolveLinerStream(videoId, signal);
-  if (liner) {
-    log("cyan", "playback", `resolved liner audio (gateway) for "${track.title}"`);
-    return fromLinerStream(liner, track);
-  }
-
-  // 2. If signed in, try account/TV playback
-  if (isYoutubeSignedIn() && prefersAccountPlayback()) {
-    try {
-      return await resolveYoutubeAudio(videoId, progressive, signal);
-    } catch (err) {
-      if (isAbortError(err, signal)) throw err;
-      log("yellow", "playback", `account youtube audio failed: ${String(err)}`);
-    }
-  }
-
-  // 3. Try direct Innertube
   try {
-    return await resolveYoutubeAudio(videoId, progressive, signal);
+    return await resolveYoutubeAudio(videoId, track, progressive, signal);
   } catch (ytError) {
     if (isAbortError(ytError, signal)) throw ytError;
     log(

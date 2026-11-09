@@ -143,44 +143,46 @@ def _fetch_potoken_sync(video_id: str) -> tuple[Optional[str], Optional[str]]:
 
 
 def _fetch_invidious_sync(video_id: str) -> Optional[dict]:
-    """Fallback extraction using public Invidious API with server proxying."""
+    """Fallback extraction using public Invidious API with companion proxying."""
     import json
-    import urllib.parse
     import urllib.request
+
     instance = "https://yt.chocolatemoo53.com"
+    ua = "Mozilla/5.0 (X11; Linux x86_64; rv:135.0) Gecko/20100101 Firefox/135.0"
+    headers = {
+        "User-Agent": ua,
+        "Referer": f"{instance}/",
+        "Origin": instance,
+    }
     try:
-        url = f"{instance}/api/v1/videos/{video_id}?local=true"
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        url = f"{instance}/api/v1/videos/{video_id}"
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=8) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-            formats = [f for f in data.get("adaptiveFormats", []) if "audio" in (f.get("type") or "")]
+            formats = [
+                f
+                for f in data.get("adaptiveFormats", [])
+                if "audio" in (f.get("type") or "")
+            ]
             if formats:
                 best = (
-                    next((f for f in formats if f.get("itag") in (140, "140")), None)
-                    or next((f for f in formats if f.get("itag") in (251, "251")), None)
+                    next((f for f in formats if str(f.get("itag")) == "140"), None)
+                    or next((f for f in formats if str(f.get("itag")) == "251"), None)
                     or formats[0]
                 )
-                raw_url = best["url"]
-                if "googlevideo.com" in raw_url:
-                    p = urllib.parse.urlparse(raw_url)
-                    inst_p = urllib.parse.urlparse(instance)
-                    stream_url = urllib.parse.urlunparse(p._replace(netloc=inst_p.netloc, scheme=inst_p.scheme))
-                elif raw_url.startswith("/"):
-                    stream_url = instance + raw_url
-                else:
-                    stream_url = raw_url
-
-                ext = "mp4" if "mp4" in best.get("type", "") else "webm"
+                itag = str(best.get("itag") or "140")
+                stream_url = f"{instance}/latest_version?id={video_id}&itag={itag}&local=true"
+                ext = "m4a" if itag == "140" or "mp4" in (best.get("type") or "") else "webm"
                 return {
                     "url": stream_url,
                     "ext": ext,
-                    "acodec": "aac" if ext == "mp4" else "opus",
+                    "acodec": "mp4a.40.2" if ext == "m4a" else "opus",
                     "vcodec": "none",
                     "protocol": "https",
                     "filesize": int(best.get("clen") or 0),
                     "duration": data.get("lengthSeconds"),
                     "title": data.get("title"),
-                    "http_headers": {"User-Agent": "Mozilla/5.0"},
+                    "http_headers": headers,
                 }
     except Exception:
         pass
@@ -209,6 +211,10 @@ def _sync_extract_info(video_id: str) -> dict:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             return ydl.extract_info(url, download=False)
     except Exception:
+        invidious_info = _fetch_invidious_sync(video_id)
+        if invidious_info:
+            return invidious_info
+
         po_token, visitor_data = _fetch_potoken_sync(video_id)
         if po_token:
             ydl_opts_pot = {
@@ -236,9 +242,6 @@ def _sync_extract_info(video_id: str) -> dict:
             except Exception:
                 pass
 
-        invidious_info = _fetch_invidious_sync(video_id)
-        if invidious_info:
-            return invidious_info
         raise
 
 
@@ -481,7 +484,7 @@ async def proxy_upstream_stream(
 
     client = get_streamer_client(request)
     req = client.build_request(method, entry.source_url, headers=headers)
-    resp = await client.send(req, stream=True)
+    resp = await client.send(req, stream=True, follow_redirects=True)
 
     # 403 recovery: evict cache and retry once
     if resp.status_code == 403:
@@ -497,7 +500,7 @@ async def proxy_upstream_stream(
         if range_header:
             headers["Range"] = range_header
         req = client.build_request(method, new_entry.source_url, headers=headers)
-        resp = await client.send(req, stream=True)
+        resp = await client.send(req, stream=True, follow_redirects=True)
 
     out_headers = filter_response_headers(resp.headers)
     out_headers["accept-ranges"] = "bytes"
