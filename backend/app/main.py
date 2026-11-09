@@ -38,7 +38,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Liner Audio Stream & CORS Gateway",
     description="Personal Audio Stream and CORS Gateway for Liner Desktop",
-    version="0.1.0",
+    version="0.1.1",
     lifespan=lifespan,
 )
 
