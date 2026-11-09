@@ -140,7 +140,7 @@ def _sync_extract_info(video_id: str) -> dict:
         "cachedir": False,
         "js_runtimes": {"node": {}},
         "remote_components": ["ejs:github"],
-        "extractor_args": {"youtube": {"player_client": ["visionos", "android"]}},
+        "extractor_args": {"youtube": {"player_client": ["android"]}},
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         return ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
@@ -164,10 +164,17 @@ def _sync_transcode_to_file(
     if target_format == "mp3":
         cmd.extend(["-c:a", "libmp3lame", "-q:a", "2"])
     else:
-        cmd.extend(["-c:a", "aac", "-b:a", "192k"])
+        cmd.extend(["-c:a", "copy"])
 
     cmd.append(output_path)
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except subprocess.CalledProcessError:
+        cmd_fallback = [FFMPEG_PATH, "-y"]
+        if headers_str:
+            cmd_fallback.extend(["-headers", headers_str])
+        cmd_fallback.extend(["-i", source_url, "-vn", "-c:a", "aac", "-b:a", "192k", output_path])
+        subprocess.run(cmd_fallback, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 async def extract_video_stream(
@@ -192,6 +199,7 @@ async def extract_video_stream(
     http_headers = info.get("http_headers") or {}
     ext = (info.get("ext") or "").lower()
     acodec = info.get("acodec")
+    vcodec = info.get("vcodec")
     filesize = info.get("filesize") or info.get("filesize_approx") or 0
     duration = info.get("duration")
     title = info.get("title")
@@ -204,11 +212,12 @@ async def extract_video_stream(
         and "manifest" not in source_url
         and "dash" not in protocol
     )
+    is_audio_only = bool(acodec and (not vcodec or vcodec == "none"))
 
-    mime_type = "audio/mp4" if ext == "m4a" else ("audio/webm" if ext == "webm" else "audio/mpeg")
-    codec = acodec or ("mp4a.40.2" if ext == "m4a" else "opus")
+    mime_type = "audio/mp4" if ext in ("m4a", "mp4") else ("audio/webm" if ext == "webm" else "audio/mpeg")
+    codec = acodec or ("mp4a.40.2" if ext in ("m4a", "mp4") else "opus")
     local_file_path: Optional[str] = None
-    is_direct_standalone = is_progressive_http and requested_format != "mp3"
+    is_direct_standalone = is_progressive_http and is_audio_only and requested_format != "mp3"
 
     # Transcode if not direct progressive standalone or if mp3 format requested
     if not is_direct_standalone or requested_format == "mp3":
@@ -496,7 +505,7 @@ def _sync_download_mp3(video_id: str, output_path: str, title: Optional[str], ar
         "outtmpl": output_path.replace(".mp3", ".%(ext)s"),
         "js_runtimes": {"node": {}},
         "remote_components": ["ejs:github"],
-        "extractor_args": {"youtube": {"player_client": ["tv_embedded", "web_embedded"]}},
+        "extractor_args": {"youtube": {"player_client": ["android"]}},
         "postprocessors": [
             {
                 "key": "FFmpegExtractAudio",
