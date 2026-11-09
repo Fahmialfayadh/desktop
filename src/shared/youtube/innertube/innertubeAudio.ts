@@ -146,14 +146,24 @@ export async function resolveDirectAudioStream(
   const ordered = realWeb ? profiles : orderedProfiles(profiles);
   for (const profile of ordered) {
     profilesTried += 1;
+    const profileSignal = realWeb
+      ? AbortSignal.any([
+          ...(options.signal ? [options.signal] : []),
+          AbortSignal.timeout(4000),
+        ])
+      : options.signal;
     const profileOptions =
       poToken && profile.acceptsPoToken
         ? {
             ...options,
+            signal: profileSignal,
             poToken: poToken.poToken,
             visitorData: poToken.visitorData,
           }
-        : options;
+        : {
+            ...options,
+            signal: profileSignal,
+          };
     try {
       const stream = await resolveWithProfile(
         videoId,
@@ -168,6 +178,18 @@ export async function resolveDirectAudioStream(
       failures.push(
         `${profile.clientName}: ${error instanceof Error ? error.message : String(error)}`,
       );
+      const msg = (
+        error instanceof Error ? error.message : String(error)
+      ).toLowerCase();
+      if (
+        realWeb &&
+        (msg.includes("not a bot") ||
+          msg.includes("login_required") ||
+          msg.includes("sign in to confirm") ||
+          msg.includes("bot check"))
+      ) {
+        break;
+      }
     }
   }
   if (profilesTried > 0 && profilesRefused === profilesTried)

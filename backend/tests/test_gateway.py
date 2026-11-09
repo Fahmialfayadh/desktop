@@ -86,7 +86,7 @@ def test_proxy_forwarding_and_header_rewriting(client):
     mock_transport = httpx.MockTransport(mock_handler)
     mock_proxy_client = httpx.AsyncClient(transport=mock_transport, follow_redirects=False)
 
-    with patch("socket.getaddrinfo", return_value=fake_addr_info), \
+    with patch("app.proxy.resolve_host_ips", return_value=("142.250.190.46",)), \
          patch("app.proxy.get_proxy_client", return_value=mock_proxy_client):
         response = client.get(
             "/api/proxy?url=https://music.youtube.com/youtubei/v1/search",
@@ -126,7 +126,7 @@ def test_proxy_gzipped_response_decompression_and_streaming(client):
     mock_transport = httpx.MockTransport(mock_handler)
     mock_proxy_client = httpx.AsyncClient(transport=mock_transport, follow_redirects=False)
 
-    with patch("socket.getaddrinfo", return_value=fake_addr_info), \
+    with patch("app.proxy.resolve_host_ips", return_value=("142.250.190.46",)), \
          patch("app.proxy.get_proxy_client", return_value=mock_proxy_client):
         response = client.get("/api/proxy?url=https://music.youtube.com/youtubei/v1/search")
         assert response.status_code == 200

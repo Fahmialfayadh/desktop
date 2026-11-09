@@ -5,14 +5,24 @@ const SCRIPT_URL =
   /src="((?:https:)?\/\/a-v2\.sndcdn\.com\/assets\/[^"]+\.js)"/g;
 const CLIENT_ID_PATTERN = /client_id\s*[:=]\s*"([a-zA-Z0-9]{32})"/;
 
-let cachedSoundCloudClientId: string | undefined;
+const FALLBACK_CLIENT_ID = "39AVoiZVrdvJEMFLH8T0c5WGshQaAPRJ";
+
+let cachedSoundCloudClientId: string | undefined = FALLBACK_CLIENT_ID;
 
 export function rememberSoundCloudClientId(clientId: string): void {
   cachedSoundCloudClientId = clientId;
+  try {
+    if (typeof localStorage !== "undefined")
+      localStorage.setItem("sc_client_id", clientId);
+  } catch {}
 }
 
 export function resetSoundCloudClientIdCache(): void {
   cachedSoundCloudClientId = undefined;
+  try {
+    if (typeof localStorage !== "undefined")
+      localStorage.removeItem("sc_client_id");
+  } catch {}
 }
 
 function scriptUrlsFromHtml(html: string): string[] {
@@ -46,18 +56,42 @@ export async function getSoundCloudClientId(
 ): Promise<string> {
   if (configuredClientId?.trim()) return configuredClientId.trim();
   if (cachedSoundCloudClientId) return cachedSoundCloudClientId;
+  try {
+    const stored =
+      typeof localStorage !== "undefined"
+        ? localStorage.getItem("sc_client_id")
+        : null;
+    if (stored) {
+      cachedSoundCloudClientId = stored;
+      return stored;
+    }
+  } catch {}
   const discovered = await discoverSoundCloudClientId(signal);
-  if (!discovered)
-    throw new Error("SoundCloud is unavailable right now, try again later.");
-  return discovered;
+  if (discovered) {
+    try {
+      if (typeof localStorage !== "undefined")
+        localStorage.setItem("sc_client_id", discovered);
+    } catch {}
+    return discovered;
+  }
+  return FALLBACK_CLIENT_ID;
 }
 
 export async function refreshSoundCloudClientId(
   rejectedClientId: string,
   signal?: AbortSignal,
 ): Promise<string | undefined> {
-  if (cachedSoundCloudClientId === rejectedClientId)
+  if (cachedSoundCloudClientId === rejectedClientId) {
     cachedSoundCloudClientId = undefined;
+    try {
+      if (typeof localStorage !== "undefined")
+        localStorage.removeItem("sc_client_id");
+    } catch {}
+  }
   const discovered = await discoverSoundCloudClientId(signal);
-  return discovered && discovered !== rejectedClientId ? discovered : undefined;
+  if (discovered && discovered !== rejectedClientId) {
+    rememberSoundCloudClientId(discovered);
+    return discovered;
+  }
+  return undefined;
 }

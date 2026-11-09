@@ -136,8 +136,10 @@ def _sync_extract_info(video_id: str) -> dict:
         "no_warnings": True,
         "noplaylist": True,
         "extract_flat": False,
-        "format": "bestaudio[ext=m4a][protocol^=http]/bestaudio[ext=webm][protocol^=http]/bestaudio",
+        "format": "bestaudio[ext=m4a][protocol^=http]/bestaudio[ext=webm][protocol^=http]/bestaudio/best",
         "cachedir": False,
+        "js_runtimes": {"node": {}},
+        "remote_components": ["ejs:github"],
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         return ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
@@ -183,7 +185,7 @@ async def extract_video_stream(
     try:
         info = await asyncio.to_thread(_sync_extract_info, video_id)
     except (DownloadError, ExtractorError) as exc:
-        raise HTTPException(status_code=404, detail=f"Track {video_id} not found or unavailable") from exc
+        raise HTTPException(status_code=404, detail=f"Track {video_id} not found or unavailable: {exc}") from exc
 
     source_url = info.get("url") or ""
     http_headers = info.get("http_headers") or {}
@@ -491,6 +493,8 @@ def _sync_download_mp3(video_id: str, output_path: str, title: Optional[str], ar
         "noplaylist": True,
         "format": "bestaudio/best",
         "outtmpl": output_path.replace(".mp3", ".%(ext)s"),
+        "js_runtimes": {"node": {}},
+        "remote_components": ["ejs:github"],
         "postprocessors": [
             {
                 "key": "FFmpegExtractAudio",

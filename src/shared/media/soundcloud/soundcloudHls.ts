@@ -14,7 +14,7 @@ export interface HlsDownloadOptions {
 
 type ParsedPlaylist = HlsMediaPlaylist | { variant: string };
 
-const DEFAULT_CONCURRENCY = 6;
+const DEFAULT_CONCURRENCY = 10;
 const DEFAULT_MAX_BYTES = 300 * 1024 * 1024;
 const MAX_SEGMENT_ATTEMPTS = 2;
 const MAX_PLAYLIST_HOPS = 2;

@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   resolveDirectAudioStream: vi.fn(),
   searchRaw: vi.fn(),
   resolveSoundCloudStream: vi.fn(),
+  searchSoundCloudTracks: vi.fn(),
 }));
 
 vi.mock("@/shared/youtube", async (importOriginal) => {
@@ -20,7 +21,11 @@ vi.mock("@/shared/youtube", async (importOriginal) => {
 vi.mock("@/shared/media/soundcloud", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("@/shared/media/soundcloud")>();
-  return { ...actual, resolveSoundCloudStream: mocks.resolveSoundCloudStream };
+  return {
+    ...actual,
+    resolveSoundCloudStream: mocks.resolveSoundCloudStream,
+    searchSoundCloudTracks: mocks.searchSoundCloudTracks,
+  };
 });
 
 import { resolvePlaybackStream } from "./streamResolver";
@@ -65,6 +70,7 @@ afterEach(() => {
   mocks.resolveDirectAudioStream.mockReset();
   mocks.searchRaw.mockReset();
   mocks.resolveSoundCloudStream.mockReset();
+  mocks.searchSoundCloudTracks.mockReset();
   clearYoutubeStandInCache();
 });
 
@@ -81,14 +87,93 @@ describe("resolvePlaybackStream for youtube ids", () => {
     expect(mocks.resolveSoundCloudStream).not.toHaveBeenCalled();
   });
 
-  it("surfaces the innertube error when youtube cannot play the track", async () => {
+  it("surfaces the innertube error when youtube cannot play the track and no fallback hits", async () => {
     mocks.resolveDirectAudioStream.mockRejectedValue(
       new Error("LOGIN_REQUIRED"),
     );
+    mocks.searchSoundCloudTracks.mockResolvedValue([]);
 
     await expect(resolvePlaybackStream(track("dQw4w9WgXcQ"))).rejects.toThrow(
       "LOGIN_REQUIRED",
     );
+  });
+
+  it("falls back to next soundcloud hit when previous hit fails", async () => {
+    mocks.resolveDirectAudioStream.mockRejectedValue(
+      new Error("LOGIN_REQUIRED"),
+    );
+    mocks.searchSoundCloudTracks.mockResolvedValue([
+      {
+        track: {
+          id: "sc:1",
+          title: "Blinding Lights",
+          artists: [{ id: "a1", name: "The Weeknd" }],
+          durationMs: 200_000,
+        },
+      },
+      {
+        track: {
+          id: "sc:2",
+          title: "Blinding Lights",
+          artists: [{ id: "a1", name: "The Weeknd" }],
+          durationMs: 201_000,
+        },
+      },
+    ]);
+    mocks.resolveSoundCloudStream
+      .mockRejectedValueOnce(new Error("preview_only"))
+      .mockResolvedValueOnce({
+        source: "soundcloud",
+        mimeType: "audio/mp4",
+        codec: "aac",
+        bitrate: 128_000,
+        url: "https://playback.media-streaming.soundcloud.cloud/test.mp4",
+        expiresAt: "2030-01-01T00:00:00.000Z",
+      });
+
+    const stream = await resolvePlaybackStream(track("dQw4w9WgXcQ"));
+    expect(stream.source).toBe("soundcloud");
+    expect(stream.url).toBe(
+      "https://playback.media-streaming.soundcloud.cloud/test.mp4",
+    );
+    expect(mocks.resolveSoundCloudStream).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects live, remix, and duration-mismatched soundcloud hits for studio songs", async () => {
+    mocks.resolveDirectAudioStream.mockRejectedValue(
+      new Error("LOGIN_REQUIRED"),
+    );
+    mocks.searchSoundCloudTracks.mockResolvedValue([
+      {
+        track: {
+          id: "sc:live",
+          title: "Blinding Lights (Live at Super Bowl)",
+          artists: [{ id: "a1", name: "The Weeknd" }],
+          durationMs: 200_000,
+        },
+      },
+      {
+        track: {
+          id: "sc:remix",
+          title: "Blinding Lights (Club Remix)",
+          artists: [{ id: "a1", name: "The Weeknd" }],
+          durationMs: 200_000,
+        },
+      },
+      {
+        track: {
+          id: "sc:long",
+          title: "Blinding Lights",
+          artists: [{ id: "a1", name: "The Weeknd" }],
+          durationMs: 600_000,
+        },
+      },
+    ]);
+
+    await expect(resolvePlaybackStream(track("dQw4w9WgXcQ"))).rejects.toThrow(
+      "LOGIN_REQUIRED",
+    );
+    expect(mocks.resolveSoundCloudStream).not.toHaveBeenCalled();
   });
 });
 
@@ -109,6 +194,7 @@ describe("resolvePlaybackStream for ids of unknown sources", () => {
 
   it("fails when youtube has no matching track", async () => {
     mocks.searchRaw.mockResolvedValue([]);
+    mocks.searchSoundCloudTracks.mockResolvedValue([]);
 
     await expect(resolvePlaybackStream(track("local-file-2"))).rejects.toThrow(
       "No matching YouTube track found",

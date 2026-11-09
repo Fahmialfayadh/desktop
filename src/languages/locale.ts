@@ -23,7 +23,11 @@ function isLocale(value: string): value is Locale {
 }
 
 export function getStoredLocale(): Locale {
-  if (typeof window === "undefined" || !window.localStorage) return "en";
+  if (
+    typeof window === "undefined" ||
+    typeof window.localStorage?.getItem !== "function"
+  )
+    return "en";
   const stored = window.localStorage.getItem(LOCALE_STORAGE_KEY);
   if (stored && isLocale(stored)) return stored;
   if (stored && LANGUAGE_ALIASES[stored]) {
@@ -34,7 +38,10 @@ export function getStoredLocale(): Locale {
 }
 
 export function storeLocale(locale: Locale): void {
-  if (typeof window !== "undefined") {
+  if (
+    typeof window !== "undefined" &&
+    typeof window.localStorage?.setItem === "function"
+  ) {
     window.localStorage.setItem(LOCALE_STORAGE_KEY, locale);
   }
 }

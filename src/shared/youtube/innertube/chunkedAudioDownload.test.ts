@@ -71,6 +71,20 @@ describe("downloadAudioBytes", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
+  it("downloads from gateway stream endpoint using range chunks when contentLength is provided", async () => {
+    const fetchSpy = rangeServer();
+    const gatewayUrl = "https://liner-gateway.fahmialfayadh.site/api/stream/dQw4w9WgXcQ";
+    const bytes = await downloadAudioBytes(gatewayUrl, {
+      contentLength: source.length,
+      chunkSize: 1000,
+    });
+    expect(bytes).toEqual(source);
+    const ranges = fetchSpy.mock.calls
+      .map(([input]) => new URL(String(input)).searchParams.get("range"))
+      .sort();
+    expect(ranges).toEqual(["0-999", "1000-1999", "2000-2499"]);
+  });
+
   it("returns null for a partial single-request response", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(new Uint8Array(4), {

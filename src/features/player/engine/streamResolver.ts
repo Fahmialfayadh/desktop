@@ -6,7 +6,6 @@ import {
   resolveTvAudioStream,
   toVideoId,
 } from "@/shared/youtube";
-import { resolveInvidiousAudioStream } from "@/shared/youtube/invidiousResolver";
 import {
   isOfflineMode,
   OFFLINE_UNAVAILABLE_MESSAGE,
@@ -34,6 +33,9 @@ import {
 import { findYoutubeStandIn } from "./youtubeStandIn";
 import { findExactSongVersion } from "./exactSongVersion";
 import { appAllowsAccountPlayback } from "./accountPlayback";
+import { buildSourceProfile } from "@/shared/media/matching/sourceProfile";
+import { rankCandidate } from "@/shared/media/matching/rankCandidate";
+import type { ImportedTrack } from "@/shared/contracts";
 
 export interface ResolveStreamOptions {
   progressive?: boolean;
@@ -82,6 +84,72 @@ async function resolveYoutubeAudio(
   );
 }
 
+async function resolveSoundCloudFallback(
+  track: PlayableTrack,
+  signal?: AbortSignal,
+): Promise<PlaybackStream | null> {
+  try {
+    const artist = track.artists?.trim() || "";
+    const query = artist ? `${track.title} ${artist}` : track.title;
+    const hits = await searchSoundCloudTracks(query, signal);
+    if (!hits.length) return null;
+
+    const source: ImportedTrack = {
+      sourceId: track.id,
+      title: track.title,
+      artists: artist
+        ? artist
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : [],
+      ...(track.durationMs > 0 ? { durationMs: track.durationMs } : {}),
+    };
+
+    const profile = buildSourceProfile(source);
+    const rankedHits = hits
+      .map((hit) => ({
+        hit,
+        ranked: rankCandidate(profile, hit.track),
+      }))
+      .filter(({ ranked }) => {
+        if (ranked.isDisqualified) return false;
+        if (!ranked.versionMatches) return false;
+        return (
+          ranked.score >= 70 &&
+          ranked.bestTitleRatio >= 70 &&
+          (ranked.artistExact || ranked.bestArtistRatio >= 65)
+        );
+      })
+      .sort((a, b) => b.ranked.score - a.ranked.score);
+
+    for (const { hit } of rankedHits.slice(0, 3)) {
+      try {
+        const scStream = fromSoundCloudStream(
+          await resolveSoundCloudStream(hit.track.id, { signal }),
+        );
+        scStream.standIn = true;
+        log(
+          "cyan",
+          "playback",
+          `resolved soundcloud fallback ${hit.track.id} for "${track.title}"`,
+        );
+        return scStream;
+      } catch (err) {
+        if (isAbortError(err, signal)) throw err;
+        log(
+          "yellow",
+          "playback",
+          `soundcloud hit ${hit.track.id} failed, trying next hit: ${String(err)}`,
+        );
+      }
+    }
+  } catch (scErr) {
+    if (isAbortError(scErr, signal)) throw scErr;
+  }
+  return null;
+}
+
 async function resolveYoutubeStandIn(
   track: PlayableTrack,
   progressive: boolean,
@@ -89,19 +157,8 @@ async function resolveYoutubeStandIn(
 ): Promise<PlaybackStream> {
   const videoId = await findYoutubeStandIn(track, signal);
   if (!videoId) {
-    const query = track.artists ? `${track.title} ${track.artists}` : track.title;
-    try {
-      const hits = await searchSoundCloudTracks(query);
-      if (hits.length > 0) {
-        const scStream = fromSoundCloudStream(
-          await resolveSoundCloudStream(hits[0].track.id, { signal }),
-        );
-        scStream.standIn = true;
-        return scStream;
-      }
-    } catch (scErr) {
-      if (isAbortError(scErr, signal)) throw scErr;
-    }
+    const scStream = await resolveSoundCloudFallback(track, signal);
+    if (scStream) return scStream;
     throw new Error("No matching YouTube track found");
   }
   log(
@@ -121,36 +178,8 @@ async function resolveYoutubeStandIn(
     return stream;
   } catch (ytError) {
     if (isAbortError(ytError, signal)) throw ytError;
-    try {
-      const invidious = await resolveInvidiousAudioStream(videoId, signal);
-      if (invidious) {
-        log("cyan", "playback", `resolved invidious stream for "${track.title}"`);
-        return {
-          url: invidious.url,
-          source: "youtube",
-          expiresAtMs: Date.now() + 6 * 3600 * 1000,
-          mimeType: invidious.mimeType,
-          codec: invidious.codec,
-          bitrate: invidious.bitrate,
-          standIn: true,
-        };
-      }
-    } catch (invErr) {
-      if (isAbortError(invErr, signal)) throw invErr;
-    }
-    const query = track.artists ? `${track.title} ${track.artists}` : track.title;
-    try {
-      const hits = await searchSoundCloudTracks(query);
-      if (hits.length > 0) {
-        const scStream = fromSoundCloudStream(
-          await resolveSoundCloudStream(hits[0].track.id, { signal }),
-        );
-        scStream.standIn = true;
-        return scStream;
-      }
-    } catch (scErr) {
-      if (isAbortError(scErr, signal)) throw scErr;
-    }
+    const scStream = await resolveSoundCloudFallback(track, signal);
+    if (scStream) return scStream;
     throw ytError;
   }
 }
@@ -205,42 +234,13 @@ async function resolveYoutubeTrack(
     return await resolveYoutubeAudio(videoId, progressive, signal);
   } catch (ytError) {
     if (isAbortError(ytError, signal)) throw ytError;
-    try {
-      const invidious = await resolveInvidiousAudioStream(videoId, signal);
-      if (invidious) {
-        log("cyan", "playback", `resolved invidious stream for "${track.title}"`);
-        return {
-          url: invidious.url,
-          source: "youtube",
-          expiresAtMs: Date.now() + 6 * 3600 * 1000,
-          mimeType: invidious.mimeType,
-          codec: invidious.codec,
-          bitrate: invidious.bitrate,
-        };
-      }
-    } catch (invErr) {
-      if (isAbortError(invErr, signal)) throw invErr;
-    }
     log(
       "yellow",
       "playback",
       `youtube audio failed for "${track.title}", searching soundcloud fallback: ${String(ytError)}`,
     );
-    const query = track.artists ? `${track.title} ${track.artists}` : track.title;
-    try {
-      const hits = await searchSoundCloudTracks(query);
-      if (hits.length > 0) {
-        const scTrack = hits[0].track;
-        log("cyan", "playback", `resolved soundcloud fallback ${scTrack.id} for "${track.title}"`);
-        const scStream = fromSoundCloudStream(
-          await resolveSoundCloudStream(scTrack.id, { signal }),
-        );
-        scStream.standIn = true;
-        return scStream;
-      }
-    } catch (scErr) {
-      if (isAbortError(scErr, signal)) throw scErr;
-    }
+    const scStream = await resolveSoundCloudFallback(track, signal);
+    if (scStream) return scStream;
     throw ytError;
   }
 }

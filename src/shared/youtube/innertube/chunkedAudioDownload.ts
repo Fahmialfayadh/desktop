@@ -7,13 +7,31 @@ export interface AudioDownloadOptions {
   concurrency?: number;
 }
 
-const DEFAULT_CHUNK_SIZE = 1024 * 1024;
-const DEFAULT_CONCURRENCY = 4;
+const DEFAULT_CHUNK_SIZE = 512 * 1024;
+const DEFAULT_CONCURRENCY = 6;
 const MAX_CHUNK_ATTEMPTS = 2;
 
 export function isGoogleVideoUrl(url: string): boolean {
   try {
     return new URL(url).hostname.endsWith(".googlevideo.com");
+  } catch {
+    return false;
+  }
+}
+
+export function supportsChunkedDownload(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    if (host.endsWith(".googlevideo.com")) return true;
+    if (
+      host.includes("gateway") ||
+      parsed.pathname.includes("/api/stream") ||
+      parsed.pathname.includes("/api/proxy")
+    ) {
+      return true;
+    }
+    return false;
   } catch {
     return false;
   }
@@ -32,19 +50,29 @@ async function fetchChunk(
   signal?: AbortSignal,
 ): Promise<Uint8Array<ArrayBuffer>> {
   const expected = end - start + 1;
+  const chunkUrl = withRange(url, start, end);
   let lastError: unknown = null;
   for (let attempt = 0; attempt < MAX_CHUNK_ATTEMPTS; attempt += 1) {
     try {
-      const response = await fetch(withRange(url, start, end), { signal });
-      if (!response.ok)
+      const response = await fetch(chunkUrl, {
+        headers: {
+          Range: `bytes=${start}-${end}`,
+        },
+        signal,
+      });
+      if (!response.ok && response.status !== 206)
         throw new Error(
           `chunk ${start}-${end} returned HTTP ${response.status}`,
         );
       const bytes = new Uint8Array(await response.arrayBuffer());
-      if (bytes.byteLength !== expected)
+      if (bytes.byteLength !== expected) {
+        if (bytes.byteLength > expected && start === 0) {
+          return bytes.subarray(0, expected);
+        }
         throw new Error(
           `chunk ${start}-${end} returned ${bytes.byteLength} of ${expected} bytes`,
         );
+      }
       return bytes;
     } catch (error) {
       if (signal?.aborted) throw error;
@@ -95,8 +123,10 @@ export async function downloadAudioBytes(
   options: AudioDownloadOptions = {},
 ): Promise<Uint8Array<ArrayBuffer> | null> {
   const total = options.contentLength;
+  const isChunkable = isGoogleVideoUrl(url) || supportsChunkedDownload(url);
+
   const bytes =
-    total && total > 0 && isGoogleVideoUrl(url)
+    total && total > 0 && isChunkable
       ? await downloadInChunks(url, total, options)
       : await downloadWhole(url, options.signal);
   return bytes && bytes.byteLength > 0 ? bytes : null;

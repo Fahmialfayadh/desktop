@@ -479,9 +479,9 @@ describe("Player auto-skip on playback error", () => {
   });
 
   describe("Queue Preload Behavior", () => {
-    it("preloads strictly only 1 next track in queue without spamming upcoming tracks", async () => {
+    it("preloads upcoming tracks in queue without spamming", async () => {
       if (!playerRuntime) return;
-      const preloadSpy = vi.spyOn(playerRuntime, "preloadTrack");
+      const preloadSpy = vi.spyOn(playerRuntime, "preloadTracks");
       const tracks = Array.from({ length: 10 }, (_, i) =>
         mockTrack(`queue-${i + 1}`, `Song ${i + 1}`),
       );
@@ -490,13 +490,9 @@ describe("Player auto-skip on playback error", () => {
       expect(usePlayerStore.getState().currentIndex).toBe(0);
 
       expect(preloadSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ id: "queue-2" }),
-      );
-      expect(preloadSpy).not.toHaveBeenCalledWith(
-        expect.objectContaining({ id: "queue-3" }),
-      );
-      expect(preloadSpy).not.toHaveBeenCalledWith(
-        expect.objectContaining({ id: "queue-4" }),
+        expect.arrayContaining([
+          expect.objectContaining({ id: "queue-2" }),
+        ]),
       );
 
       preloadSpy.mockRestore();

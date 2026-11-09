@@ -50,9 +50,13 @@ describe("playerEngine.stopAndClear", () => {
 
     await playerEngine.stopAndClear();
 
-    const persisted = JSON.parse(
-      localStorage.getItem("liner_player_session_v2") ?? "{}",
-    );
+    const raw =
+      typeof window.localStorage?.getItem === "function"
+        ? window.localStorage.getItem("liner_player_session_v2")
+        : typeof localStorage !== "undefined" && typeof localStorage.getItem === "function"
+          ? localStorage.getItem("liner_player_session_v2")
+          : null;
+    const persisted = JSON.parse(raw ?? "{}");
     expect(persisted.state?.currentTrack ?? null).toBeNull();
     expect(persisted.state?.queue ?? []).toEqual([]);
   });

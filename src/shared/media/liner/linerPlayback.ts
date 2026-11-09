@@ -10,8 +10,8 @@ export interface LinerAudioStream {
   size: number;
 }
 
-const REQUEST_TIMEOUT_MS = 4_000;
-const GATEWAY_BACKOFF_MS = 10_000;
+const REQUEST_TIMEOUT_MS = 8_000;
+const GATEWAY_BACKOFF_MS = 5_000;
 
 let pausedUntil = 0;
 
@@ -54,7 +54,7 @@ export async function resolveLinerStream(
       return (await res.json()) as LinerAudioStream;
     }
 
-    if (res.status === 404) {
+    if (res.status === 404 || res.status < 500) {
       return null;
     }
 
@@ -62,7 +62,7 @@ export async function resolveLinerStream(
     return null;
   } catch (error) {
     if (isAbortError(error, signal) && signal?.aborted) throw error;
-    pause(GATEWAY_BACKOFF_MS, `stream resolve failed: ${String(error)}`);
+    log("yellow", "playback", `stream resolve failed for ${videoId}: ${String(error)}`);
     return null;
   }
 }

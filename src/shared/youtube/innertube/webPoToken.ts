@@ -6,8 +6,8 @@ const CHALLENGE_URL =
   "https://www.youtube.com/youtubei/v1/att/get?prettyPrint=false";
 const REQUEST_KEY = "O43z0dpjhgX20SCx4KAo";
 const TOKEN_CACHE_MS = 6 * 60 * 60 * 1000;
-const GATEWAY_MINT_TIMEOUT_MS = 40_000;
-const GATEWAY_MINT_BACKOFF_MS = 5 * 60 * 1000;
+const GATEWAY_MINT_TIMEOUT_MS = 3_000;
+const GATEWAY_MINT_BACKOFF_MS = 2 * 60 * 1000;
 
 export interface WebPoTokenResult {
   poToken: string;
@@ -51,7 +51,12 @@ async function fetchGatewayToken(
       videoId,
     )}`,
     {
-      signal: AbortSignal.timeout(GATEWAY_MINT_TIMEOUT_MS),
+      signal: signal
+        ? AbortSignal.any([
+            signal,
+            AbortSignal.timeout(GATEWAY_MINT_TIMEOUT_MS),
+          ])
+        : AbortSignal.timeout(GATEWAY_MINT_TIMEOUT_MS),
       cache: "no-store",
     },
   );

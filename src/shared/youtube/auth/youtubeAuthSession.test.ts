@@ -30,9 +30,26 @@ async function loadModule() {
   return import("./youtubeAuthSession");
 }
 
+const storageMap = new Map<string, string>();
+const storageMock = {
+  getItem: (key: string) => storageMap.get(key) ?? null,
+  setItem: (key: string, value: string) => storageMap.set(key, String(value)),
+  removeItem: (key: string) => storageMap.delete(key),
+  clear: () => storageMap.clear(),
+  get length() {
+    return storageMap.size;
+  },
+  key: (index: number) => Array.from(storageMap.keys())[index] ?? null,
+};
+Object.defineProperty(globalThis, "localStorage", {
+  value: storageMock,
+  configurable: true,
+  writable: true,
+});
+
 describe("youtube auth session backed by the main process", () => {
   beforeEach(() => {
-    localStorage.clear();
+    storageMock.clear();
   });
 
   afterEach(() => {

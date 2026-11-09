@@ -4,7 +4,7 @@ export const VERSION_PATTERNS: Array<{ tag: string; regex: RegExp }> = [
   { tag: "flip", regex: /\b(flip|флип)\b/i },
   { tag: "bootleg", regex: /\b(bootleg|бутлег)\b/i },
   { tag: "mashup", regex: /\b(mash\s*up|мэшап|мешап)\b/i },
-  { tag: "edit", regex: /\b((?:radio|club|extended)?\s*edit|эдит)\b/i },
+  { tag: "edit", regex: /\b((?:radio|club|extended|dance|original)?\s*(?:edit|mix)|эдит)\b/i },
   { tag: "slowed", regex: /\b(slowed(?:\s*(?:\+|&|and)\s*reverb)?|слоу)\b/i },
   { tag: "reverb", regex: /\b(reverb|реверб)\b/i },
   {
@@ -12,10 +12,10 @@ export const VERSION_PATTERNS: Array<{ tag: string; regex: RegExp }> = [
     regex: /\b(sp(?:ed|eed)\s*up|sp(?:ed|eed)up|спид\s*ап|спидап)\b/i,
   },
   { tag: "nightcore", regex: /\b(nightcore|найткор)\b/i },
-  { tag: "instrumental", regex: /\b(instrumental|инструментал|inst\b\.?)\b/i },
+  { tag: "instrumental", regex: /\b(instrumental|karaoke|инструментал|караоке|inst\b\.?)\b/i },
   { tag: "acoustic", regex: /\b(acoustic|акустика)\b/i },
-  { tag: "live", regex: /\b(live(?:\s+at[^)]+)?|лайв|концерт)\b/i },
-  { tag: "cover", regex: /\b(cover|кавер)\b/i },
+  { tag: "live", regex: /\b(live(?:\s+(?:at|in|from|on)[^)]+)?|alive(?:\s+\d+)?|concert|tour|session|fest(?:ival)?|лайв|концерт)\b/i },
+  { tag: "cover", regex: /\b(cover|tribute|кавер)\b/i },
   { tag: "bass_boosted", regex: /\b(bass\s*boost(?:ed)?|басс\s*буст)\b/i },
 ];
 

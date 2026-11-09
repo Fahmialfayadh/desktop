@@ -24,8 +24,8 @@ import {
 // error recovery tuning (see the audio "error" handler)
 const RECOVERY_HOLD_MS = 3000;
 const WAITING_GRACE_MS = 300; // a buffering hiccup shorter than this never shows // must play this far past a recovery before it may retry again
-const WEB_FULL_DOWNLOAD_TIMEOUT_MS = 20_000;
-const PRELOAD_AHEAD_LIMIT = 3;
+const WEB_FULL_DOWNLOAD_TIMEOUT_MS = 25_000;
+const PRELOAD_AHEAD_LIMIT = 4;
 const PRELOAD_CONCURRENCY = 2;
 
 function isWebPlaybackRuntime(): boolean {
