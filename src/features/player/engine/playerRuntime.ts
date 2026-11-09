@@ -24,17 +24,8 @@ import {
 // error recovery tuning (see the audio "error" handler)
 const RECOVERY_HOLD_MS = 3000;
 const WAITING_GRACE_MS = 300; // a buffering hiccup shorter than this never shows // must play this far past a recovery before it may retry again
-const WEB_FULL_DOWNLOAD_TIMEOUT_MS = 25_000;
 const PRELOAD_AHEAD_LIMIT = 4;
 const PRELOAD_CONCURRENCY = 2;
-
-function isWebPlaybackRuntime(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    !(window as any).linerElectron &&
-    import.meta.env.MODE !== "test"
-  );
-}
 
 export class PlayerRuntime {
   private audio: HTMLAudioElement;
@@ -896,10 +887,7 @@ export class PlayerRuntime {
       this.recoveryHoldUntilMs = null;
     }
 
-    const queuedPreload = this.preloadPromises.get(track.id);
-    if (queuedPreload) {
-      await queuedPreload;
-    } else if (this.preloadingTrackId === track.id && this.preloadingPromise) {
+    if (this.preloadingTrackId === track.id && this.preloadingPromise) {
       await this.preloadingPromise;
     } else if (this.preloadingTrackId && this.preloadingTrackId !== track.id) {
       this.preloadAbortController?.abort();
@@ -1023,70 +1011,7 @@ export class PlayerRuntime {
         return;
       }
 
-      let stream: PlaybackStream = resolvedStream;
-      let attemptedFullDownload = false;
-      if (
-        isWebPlaybackRuntime() &&
-        !resolvedStream.blob &&
-        resolvedStream.source !== "youtube-tv"
-      ) {
-        attemptedFullDownload = true;
-        const downloadController = new AbortController();
-        const downloadTimeout = setTimeout(
-          () => downloadController.abort(),
-          WEB_FULL_DOWNLOAD_TIMEOUT_MS,
-        );
-        const abortDownload = () =>
-          downloadController.abort(controller.signal.reason);
-        controller.signal.addEventListener("abort", abortDownload, {
-          once: true,
-        });
-        try {
-          const blob = await this.downloadAudioBlob(
-            resolvedStream,
-            downloadController.signal,
-          );
-          if (epoch !== this.loadEpoch || controller.signal.aborted) {
-            resolvedStream.release?.();
-            return;
-          }
-          if (blob) {
-            stream = {
-              blob,
-              source: resolvedStream.source,
-              mimeType: resolvedStream.mimeType,
-              codec: resolvedStream.codec,
-              bitrate: resolvedStream.bitrate,
-              ...(resolvedStream.contentLength
-                ? { contentLength: resolvedStream.contentLength }
-                : {}),
-              expiresAtMs: null,
-            };
-            resolvedStream.release?.();
-            const generation = audioCache.currentGeneration();
-            void audioCache
-              .saveAudioBlob(track.id, blob, blob.type, generation)
-              .then((saved) => {
-                if (saved) void linerDb.putTrack(track);
-              })
-              .catch(() => undefined);
-            log(
-              "green",
-              "playback",
-              `downloaded full audio before play (${Math.round(blob.size / 1024)} KB)`,
-            );
-          } else {
-            log(
-              "yellow",
-              "playback",
-              "full download failed, falling back to progressive stream",
-            );
-          }
-        } finally {
-          clearTimeout(downloadTimeout);
-          controller.signal.removeEventListener("abort", abortDownload);
-        }
-      }
+      const stream: PlaybackStream = resolvedStream;
 
       const streamCodec = stream.codec;
       const streamBitrate = stream.bitrate;
@@ -1143,13 +1068,11 @@ export class PlayerRuntime {
       if (epoch === this.loadEpoch) {
         usePlayerStore.getState().setStatus("playing");
         this.fadeVolume(usePlayerStore.getState().volume, 180);
-        if (!attemptedFullDownload) {
-          this.cacheAudioInBackground(
-            track,
-            stream,
-            bgCacheController.signal,
-          );
-        }
+        this.cacheAudioInBackground(
+          track,
+          stream,
+          bgCacheController.signal,
+        );
       }
       logNowPlaying(track, false, audioStartLatencyMs);
 

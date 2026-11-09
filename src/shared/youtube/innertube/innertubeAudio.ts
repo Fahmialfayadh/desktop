@@ -132,17 +132,15 @@ export async function resolveDirectAudioStream(
   let profilesTried = 0;
   let profilesRefused = 0;
   const realWeb = !options.profiles && isRealWebRuntime();
-  const tokenPromise = realWeb
-    ? getWebPoToken(videoId, options.signal).catch(() => null)
-    : null;
-  const shouldTryWebRemix =
-    !options.profiles && !realWeb && Date.now() >= webRemixRetryAt;
-  if (shouldTryWebRemix) {
+  if (!options.profiles && Date.now() >= webRemixRetryAt) {
     const stream = await resolveViaWebRemix(videoId, options, failures);
     if (stream) return stream;
   } else if (!options.profiles) {
     failures.push(`WEB_REMIX paused: ${lastWebRemixError}`);
   }
+  const tokenPromise = realWeb
+    ? getWebPoToken(videoId, options.signal).catch(() => null)
+    : null;
   const profiles =
     options.profiles ?? (realWeb ? WEB_PLAYBACK_PROFILES : PLAYBACK_PROFILES);
   const poToken = tokenPromise ? await tokenPromise : null;

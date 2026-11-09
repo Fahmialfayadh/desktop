@@ -235,6 +235,10 @@ async def execute_proxy_request(
             await resp.aclose()
             return Response(status_code=resp.status_code, headers=out_headers)
 
+        # Content-length must not be sent on streaming response because httpx decompresses the stream
+        # and Starlette manages chunked transport encoding.
+        out_headers.pop("content-length", None)
+
         async def body_stream() -> AsyncGenerator[bytes, None]:
             try:
                 async for chunk in resp.aiter_bytes():

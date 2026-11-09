@@ -113,15 +113,7 @@ async function resolveSoundCloudFallback(
         hit,
         ranked: rankCandidate(profile, hit.track),
       }))
-      .filter(({ ranked }) => {
-        if (ranked.isDisqualified) return false;
-        if (!ranked.versionMatches) return false;
-        return (
-          ranked.score >= 70 &&
-          ranked.bestTitleRatio >= 70 &&
-          (ranked.artistExact || ranked.bestArtistRatio >= 65)
-        );
-      })
+      .filter(({ ranked }) => !ranked.isDisqualified && ranked.versionMatches)
       .sort((a, b) => b.ranked.score - a.ranked.score);
 
     for (const { hit } of rankedHits.slice(0, 3)) {
