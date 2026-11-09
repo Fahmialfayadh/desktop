@@ -143,11 +143,13 @@ def _fetch_potoken_sync(video_id: str) -> tuple[Optional[str], Optional[str]]:
 
 
 def _fetch_invidious_sync(video_id: str) -> Optional[dict]:
-    """Fallback extraction using public Invidious API."""
+    """Fallback extraction using public Invidious API with server proxying."""
     import json
+    import urllib.parse
     import urllib.request
+    instance = "https://yt.chocolatemoo53.com"
     try:
-        url = f"https://yt.chocolatemoo53.com/api/v1/videos/{video_id}"
+        url = f"{instance}/api/v1/videos/{video_id}?local=true"
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode("utf-8"))
@@ -158,9 +160,19 @@ def _fetch_invidious_sync(video_id: str) -> Optional[dict]:
                     or next((f for f in formats if f.get("itag") in (251, "251")), None)
                     or formats[0]
                 )
+                raw_url = best["url"]
+                if "googlevideo.com" in raw_url:
+                    p = urllib.parse.urlparse(raw_url)
+                    inst_p = urllib.parse.urlparse(instance)
+                    stream_url = urllib.parse.urlunparse(p._replace(netloc=inst_p.netloc, scheme=inst_p.scheme))
+                elif raw_url.startswith("/"):
+                    stream_url = instance + raw_url
+                else:
+                    stream_url = raw_url
+
                 ext = "mp4" if "mp4" in best.get("type", "") else "webm"
                 return {
-                    "url": best["url"],
+                    "url": stream_url,
                     "ext": ext,
                     "acodec": "aac" if ext == "mp4" else "opus",
                     "vcodec": "none",
@@ -182,13 +194,13 @@ def _sync_extract_info(video_id: str) -> dict:
         "no_warnings": True,
         "noplaylist": True,
         "extract_flat": False,
-        "format": "bestaudio/18/best",
+        "format": "bestaudio/best",
         "cachedir": False,
         "source_address": "0.0.0.0",
+        "js_runtimes": {"node": {}},
         "extractor_args": {
             "youtube": {
-                "player_client": ["android", "web"],
-                "player_skip": ["webpage", "configs", "initial_data"],
+                "player_client": ["visionos", "android_vr", "android"],
             }
         },
     }
@@ -198,6 +210,7 @@ def _sync_extract_info(video_id: str) -> dict:
     except Exception:
         po_token, visitor_data = _fetch_potoken_sync(video_id)
         if po_token:
+            ydl_opts["extractor_args"]["youtube"]["player_client"] = ["web"]
             ydl_opts["extractor_args"]["youtube"]["po_token"] = [f"web+{po_token}"]
             if visitor_data:
                 ydl_opts["extractor_args"]["youtube"]["visitor_data"] = [visitor_data]

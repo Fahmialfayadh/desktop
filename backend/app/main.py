@@ -71,7 +71,7 @@ app.include_router(streamer_router)
 
 @app.get("/health")
 async def health_check() -> dict[str, str]:
-    return {"status": "ok", "service": "liner-web-gateway", "version": "0.1.8"}
+    return {"status": "ok", "service": "liner-web-gateway", "version": "0.1.9"}
 
 
 if __name__ == "__main__":

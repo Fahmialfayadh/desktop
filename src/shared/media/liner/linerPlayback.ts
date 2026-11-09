@@ -10,7 +10,7 @@ export interface LinerAudioStream {
   size: number;
 }
 
-const REQUEST_TIMEOUT_MS = 8_000;
+const REQUEST_TIMEOUT_MS = 15_000;
 const GATEWAY_BACKOFF_MS = 5_000;
 
 let pausedUntil = 0;

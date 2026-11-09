@@ -6,7 +6,6 @@ import {
   resolveTvAudioStream,
   toVideoId,
 } from "@/shared/youtube";
-import { resolveInvidiousAudioStream } from "@/shared/youtube/invidiousResolver";
 import {
   isOfflineMode,
   OFFLINE_UNAVAILABLE_MESSAGE,
@@ -48,14 +47,6 @@ export type {
   PlaybackStream,
   UrlPlaybackStream,
 } from "./playbackStream";
-
-function isRealWebRuntime(): boolean {
-  return (
-    import.meta.env.MODE !== "test" &&
-    typeof window !== "undefined" &&
-    !(window as any).linerElectron
-  );
-}
 
 async function resolveTvAudio(
   videoId: string,
@@ -121,7 +112,22 @@ async function resolveSoundCloudFallback(
         hit,
         ranked: rankCandidate(profile, hit.track),
       }))
-      .filter(({ ranked }) => !ranked.isDisqualified && ranked.versionMatches)
+      .filter(({ hit, ranked }) => {
+        if (ranked.isDisqualified || !ranked.versionMatches) return false;
+        const title = (hit.track.title || "").toLowerCase();
+        if (
+          title.includes("remix") ||
+          title.includes("cover") ||
+          title.includes("live") ||
+          title.includes("tribute") ||
+          title.includes("karaoke") ||
+          title.includes("slowed") ||
+          title.includes("sped up")
+        ) {
+          return false;
+        }
+        return true;
+      })
       .sort((a, b) => b.ranked.score - a.ranked.score);
 
     for (const { hit } of rankedHits.slice(0, 8)) {
@@ -159,8 +165,6 @@ async function resolveYoutubeStandIn(
 ): Promise<PlaybackStream> {
   const videoId = await findYoutubeStandIn(track, signal, excludeVideoId);
   if (!videoId || videoId === excludeVideoId) {
-    const scStream = await resolveSoundCloudFallback(track, signal);
-    if (scStream) return scStream;
     throw new Error("No matching YouTube track found");
   }
   log(
@@ -176,31 +180,11 @@ async function resolveYoutubeStandIn(
   }
 
   try {
-    const invidious = await resolveInvidiousAudioStream(videoId, signal);
-    if (invidious) {
-      log("cyan", "playback", `resolved invidious stream for stand-in "${track.title}"`);
-      return {
-        url: invidious.url,
-        source: "youtube",
-        expiresAtMs: Date.now() + 6 * 3600 * 1000,
-        mimeType: invidious.mimeType,
-        codec: invidious.codec,
-        bitrate: invidious.bitrate,
-        standIn: true,
-      };
-    }
-  } catch (invErr) {
-    if (isAbortError(invErr, signal)) throw invErr;
-  }
-
-  try {
     const stream = await resolveYoutubeAudio(videoId, progressive, signal);
     stream.standIn = true;
     return stream;
   } catch (ytError) {
     if (isAbortError(ytError, signal)) throw ytError;
-    const scStream = await resolveSoundCloudFallback(track, signal);
-    if (scStream) return scStream;
     throw ytError;
   }
 }
@@ -246,13 +230,15 @@ async function resolveYoutubeTrack(
       `album row ${rowVideoId} is a ${track.audioVariant}, playing the song ${songId}`,
     );
   const videoId = songId ?? rowVideoId;
+
+  // 1. Primary: Personal Liner Gateway (datacenter-safe yt-dlp visionos/android_vr/android proxy)
   const liner = await resolveLinerStream(videoId, signal);
   if (liner) {
-    log("cyan", "playback", `resolved liner audio (r2) for "${track.title}"`);
+    log("cyan", "playback", `resolved liner audio (gateway) for "${track.title}"`);
     return fromLinerStream(liner, track);
   }
 
-  // 1. If signed in, try account/TV playback
+  // 2. If signed in, try account/TV playback
   if (isYoutubeSignedIn() && prefersAccountPlayback()) {
     try {
       return await resolveYoutubeAudio(videoId, progressive, signal);
@@ -260,24 +246,6 @@ async function resolveYoutubeTrack(
       if (isAbortError(err, signal)) throw err;
       log("yellow", "playback", `account youtube audio failed: ${String(err)}`);
     }
-  }
-
-  // 2. Try fast Invidious resolver (verified via probeAudio in browser)
-  try {
-    const invidious = await resolveInvidiousAudioStream(videoId, signal);
-    if (invidious) {
-      log("cyan", "playback", `resolved invidious stream for "${track.title}"`);
-      return {
-        url: invidious.url,
-        source: "youtube",
-        expiresAtMs: Date.now() + 6 * 3600 * 1000,
-        mimeType: invidious.mimeType,
-        codec: invidious.codec,
-        bitrate: invidious.bitrate,
-      };
-    }
-  } catch (invErr) {
-    if (isAbortError(invErr, signal)) throw invErr;
   }
 
   // 3. Try direct Innertube
@@ -288,24 +256,19 @@ async function resolveYoutubeTrack(
     log(
       "yellow",
       "playback",
-      `youtube audio failed for "${track.title}" (${videoId}): ${String(ytError)}, trying fallbacks`,
+      `youtube audio failed for "${track.title}" (${videoId}): ${String(ytError)}, searching stand-in/fallback`,
     );
 
-    // 4. Try SoundCloud fallback
-    const scStream = await resolveSoundCloudFallback(track, signal);
-    if (scStream) return scStream;
-
-    // 5. Try YouTube stand-in
+    // 4. Try YouTube stand-in on the official YouTube catalog
     try {
       return await resolveYoutubeStandIn(track, progressive, signal, videoId);
     } catch (standInErr) {
       if (isAbortError(standInErr, signal)) throw standInErr;
-      log(
-        "yellow",
-        "playback",
-        `youtube stand-in failed: ${String(standInErr)}`,
-      );
     }
+
+    // 5. Try SoundCloud fallback (strictly filtered: studio recordings only, duration match, no remixes/covers)
+    const scStream = await resolveSoundCloudFallback(track, signal);
+    if (scStream) return scStream;
 
     throw ytError;
   }

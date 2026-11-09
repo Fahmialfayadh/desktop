@@ -161,17 +161,24 @@ def prepare_upstream_headers(target_url: str, incoming_headers: Headers) -> dict
     parsed = urllib.parse.urlsplit(target_url)
     hostname = (parsed.hostname or "").lower()
 
-    # If incoming client already specified x-origin (e.g. YouTube TV client), respect it
-    custom_origin = incoming_headers.get("x-origin")
-    if custom_origin and ("youtube.com" in hostname):
-        headers["Origin"] = custom_origin
-        headers["Referer"] = f"{custom_origin}/"
-    else:
-        for domain, (origin, referer) in DOMAIN_INJECTIONS.items():
-            if hostname == domain or hostname.endswith("." + domain):
-                headers["Origin"] = origin
-                headers["Referer"] = referer
-                break
+    # Do not inject browser origin/referer if caller is emulating a native mobile client
+    is_mobile_client = (
+        incoming_headers.get("x-youtube-client-name") in ("3", "5")
+        or "android" in (liner_ua or "").lower()
+    )
+
+    if not is_mobile_client:
+        # If incoming client already specified x-origin (e.g. YouTube TV client), respect it
+        custom_origin = incoming_headers.get("x-origin")
+        if custom_origin and ("youtube.com" in hostname):
+            headers["Origin"] = custom_origin
+            headers["Referer"] = f"{custom_origin}/"
+        else:
+            for domain, (origin, referer) in DOMAIN_INJECTIONS.items():
+                if hostname == domain or hostname.endswith("." + domain):
+                    headers["Origin"] = origin
+                    headers["Referer"] = referer
+                    break
 
     return headers
 
