@@ -11,6 +11,7 @@ const PROXIED_ROOT_DOMAINS = [
   "gstatic.com",
   "soundcloud.com",
   "sndcdn.com",
+  "soundcloud.cloud",
   "spotify.com",
   "spotify.link",
   "scdn.co",
