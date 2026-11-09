@@ -175,13 +175,22 @@ async function resolveYoutubeStandIn(
     return stream;
   }
 
-  const isWeb = isRealWebRuntime();
-  const useAccount = isYoutubeSignedIn() && prefersAccountPlayback();
-
-  // On web without sign-in, try fast Soundcloud fallback before heavy Innertube
-  if (isWeb && !useAccount) {
-    const scStream = await resolveSoundCloudFallback(track, signal);
-    if (scStream) return scStream;
+  try {
+    const invidious = await resolveInvidiousAudioStream(videoId, signal);
+    if (invidious) {
+      log("cyan", "playback", `resolved invidious stream for stand-in "${track.title}"`);
+      return {
+        url: invidious.url,
+        source: "youtube",
+        expiresAtMs: Date.now() + 6 * 3600 * 1000,
+        mimeType: invidious.mimeType,
+        codec: invidious.codec,
+        bitrate: invidious.bitrate,
+        standIn: true,
+      };
+    }
+  } catch (invErr) {
+    if (isAbortError(invErr, signal)) throw invErr;
   }
 
   try {
@@ -190,31 +199,8 @@ async function resolveYoutubeStandIn(
     return stream;
   } catch (ytError) {
     if (isAbortError(ytError, signal)) throw ytError;
-    if (isWeb) {
-      const scStream = await resolveSoundCloudFallback(track, signal);
-      if (scStream) return scStream;
-    }
-    try {
-      const invidious = await resolveInvidiousAudioStream(videoId, signal);
-      if (invidious) {
-        log("cyan", "playback", `resolved invidious stream for "${track.title}"`);
-        return {
-          url: invidious.url,
-          source: "youtube",
-          expiresAtMs: Date.now() + 6 * 3600 * 1000,
-          mimeType: invidious.mimeType,
-          codec: invidious.codec,
-          bitrate: invidious.bitrate,
-          standIn: true,
-        };
-      }
-    } catch (invErr) {
-      if (isAbortError(invErr, signal)) throw invErr;
-    }
-    if (!isWeb) {
-      const scStream = await resolveSoundCloudFallback(track, signal);
-      if (scStream) return scStream;
-    }
+    const scStream = await resolveSoundCloudFallback(track, signal);
+    if (scStream) return scStream;
     throw ytError;
   }
 }
@@ -266,39 +252,50 @@ async function resolveYoutubeTrack(
     return fromLinerStream(liner, track);
   }
 
-  const isWeb = isRealWebRuntime();
-  const useAccount = isYoutubeSignedIn() && prefersAccountPlayback();
-
-  // On web without sign-in, try fast Soundcloud fallback before heavy Innertube
-  if (isWeb && !useAccount) {
-    const scStream = await resolveSoundCloudFallback(track, signal);
-    if (scStream) return scStream;
-
+  // 1. If signed in, try account/TV playback
+  if (isYoutubeSignedIn() && prefersAccountPlayback()) {
     try {
-      return await resolveYoutubeStandIn(track, progressive, signal, videoId);
-    } catch (standInErr) {
-      if (isAbortError(standInErr, signal)) throw standInErr;
+      return await resolveYoutubeAudio(videoId, progressive, signal);
+    } catch (err) {
+      if (isAbortError(err, signal)) throw err;
+      log("yellow", "playback", `account youtube audio failed: ${String(err)}`);
     }
   }
 
+  // 2. Try fast Invidious resolver (verified via probeAudio in browser)
+  try {
+    const invidious = await resolveInvidiousAudioStream(videoId, signal);
+    if (invidious) {
+      log("cyan", "playback", `resolved invidious stream for "${track.title}"`);
+      return {
+        url: invidious.url,
+        source: "youtube",
+        expiresAtMs: Date.now() + 6 * 3600 * 1000,
+        mimeType: invidious.mimeType,
+        codec: invidious.codec,
+        bitrate: invidious.bitrate,
+      };
+    }
+  } catch (invErr) {
+    if (isAbortError(invErr, signal)) throw invErr;
+  }
+
+  // 3. Try direct Innertube
   try {
     return await resolveYoutubeAudio(videoId, progressive, signal);
   } catch (ytError) {
     if (isAbortError(ytError, signal)) throw ytError;
-    if (isWeb) {
-      log(
-        "yellow",
-        "playback",
-        `youtube audio failed for "${track.title}", searching soundcloud fallback: ${String(ytError)}`,
-      );
-      const scStream = await resolveSoundCloudFallback(track, signal);
-      if (scStream) return scStream;
-    }
     log(
       "yellow",
       "playback",
-      `youtube audio failed for "${track.title}" (${videoId}): ${String(ytError)}, searching stand-in`,
+      `youtube audio failed for "${track.title}" (${videoId}): ${String(ytError)}, trying fallbacks`,
     );
+
+    // 4. Try SoundCloud fallback
+    const scStream = await resolveSoundCloudFallback(track, signal);
+    if (scStream) return scStream;
+
+    // 5. Try YouTube stand-in
     try {
       return await resolveYoutubeStandIn(track, progressive, signal, videoId);
     } catch (standInErr) {
@@ -309,26 +306,7 @@ async function resolveYoutubeTrack(
         `youtube stand-in failed: ${String(standInErr)}`,
       );
     }
-    try {
-      const invidious = await resolveInvidiousAudioStream(videoId, signal);
-      if (invidious) {
-        log("cyan", "playback", `resolved invidious stream for "${track.title}"`);
-        return {
-          url: invidious.url,
-          source: "youtube",
-          expiresAtMs: Date.now() + 6 * 3600 * 1000,
-          mimeType: invidious.mimeType,
-          codec: invidious.codec,
-          bitrate: invidious.bitrate,
-        };
-      }
-    } catch (invErr) {
-      if (isAbortError(invErr, signal)) throw invErr;
-    }
-    if (!isWeb) {
-      const scStream = await resolveSoundCloudFallback(track, signal);
-      if (scStream) return scStream;
-    }
+
     throw ytError;
   }
 }

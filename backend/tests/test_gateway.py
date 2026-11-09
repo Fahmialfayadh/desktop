@@ -34,7 +34,7 @@ def test_health_check(client):
     assert response.json() == {
         "status": "ok",
         "service": "liner-web-gateway",
-        "version": "0.1.7",
+        "version": "0.1.8",
     }
 
 

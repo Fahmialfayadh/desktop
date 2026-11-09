@@ -9,19 +9,66 @@ const INVIDIOUS_INSTANCES = [
   "https://yt.chocolatemoo53.com",
 ];
 
+function probeAudioInBrowser(url: string, signal?: AbortSignal): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (typeof Audio === "undefined") {
+      resolve(true);
+      return;
+    }
+    const audio = new Audio();
+    audio.preload = "metadata";
+    let settled = false;
+
+    const timeout = setTimeout(() => {
+      cleanup();
+      resolve(false);
+    }, 2500);
+
+    const onAbort = () => {
+      cleanup();
+      resolve(false);
+    };
+
+    function cleanup() {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      signal?.removeEventListener("abort", onAbort);
+      audio.removeEventListener("loadedmetadata", onLoaded);
+      audio.removeEventListener("canplay", onLoaded);
+      audio.removeEventListener("error", onError);
+      try {
+        audio.src = "";
+        audio.load();
+      } catch {}
+    }
+
+    function onLoaded() {
+      cleanup();
+      resolve(true);
+    }
+
+    function onError() {
+      cleanup();
+      resolve(false);
+    }
+
+    signal?.addEventListener("abort", onAbort, { once: true });
+    audio.addEventListener("loadedmetadata", onLoaded, { once: true });
+    audio.addEventListener("canplay", onLoaded, { once: true });
+    audio.addEventListener("error", onError, { once: true });
+    audio.src = url;
+  });
+}
+
 export async function resolveInvidiousAudioStream(
   videoId: string,
   signal?: AbortSignal,
 ): Promise<InvidiousStreamResult | null> {
   if (import.meta.env.MODE === "test") return null;
-  // In pure web browser runtime, Google Video URLs from Invidious are IP-bound
-  // to the Invidious server and produce 403 / MEDIA_ELEMENT_ERROR format error in <audio>.
-  if (typeof window !== "undefined" && !(window as any).linerElectron) {
-    return null;
-  }
 
   const probe = async (instance: string): Promise<InvidiousStreamResult> => {
-    const timeout = AbortSignal.timeout(2500);
+    const timeout = AbortSignal.timeout(3500);
     const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
     const res = await fetch(
       `${instance}/api/v1/videos/${encodeURIComponent(videoId)}`,
@@ -49,8 +96,13 @@ export async function resolveInvidiousAudioStream(
           ? "mp4a.40.2"
           : "opus";
 
-      // In non-browser environments (Node/Electron), verify stream is reachable (not 403 IP-bound by Google CDN)
-      if (typeof window === "undefined" || (window as any).linerElectron) {
+      // In browser, verify stream reachability natively via audio element
+      if (typeof window !== "undefined" && !(window as any).linerElectron) {
+        const playable = await probeAudioInBrowser(best.url, combined);
+        if (!playable) {
+          throw new Error("stream not playable by browser audio element");
+        }
+      } else {
         try {
           const probeRes = await fetch(best.url, {
             method: "HEAD",
