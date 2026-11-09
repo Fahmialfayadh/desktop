@@ -4,7 +4,7 @@ import type {
   SearchResult,
   Track,
 } from "@/shared/contracts";
-import { searchRaw, videoThumbnailCover } from "@/shared/youtube";
+import { searchRaw, toVideoId, videoThumbnailCover } from "@/shared/youtube";
 import { cleanSoundCloudMetadata } from "./artistTitle";
 import { evaluateImportedTrack, type MatchDecision } from "./evaluate";
 
@@ -49,13 +49,20 @@ function mergeCandidates(left: Track[], right: Track[]): Track[] {
 export async function findCatalogMatch(
   source: ImportedTrack,
   signal?: AbortSignal,
+  excludeVideoId?: string,
 ): Promise<TrackMatchOutcome> {
   let searchFailed = false;
+  const filterExcluded = (tracks: Track[]) =>
+    excludeVideoId
+      ? tracks.filter((t) => toVideoId(t.id) !== excludeVideoId)
+      : tracks;
+
   const search = async (query: string, filter: SearchFilter) => {
     try {
-      return extractTracks(
+      const results = extractTracks(
         await searchRaw(query, filter === "all" ? undefined : filter, signal),
       );
+      return filterExcluded(results);
     } catch (error) {
       if (signal?.aborted) throw error;
       searchFailed = true;

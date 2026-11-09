@@ -38,7 +38,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Liner Audio Stream & CORS Gateway",
     description="Personal Audio Stream and CORS Gateway for Liner Desktop",
-    version="0.1.5",
+    version="0.1.6",
     lifespan=lifespan,
 )
 
@@ -71,7 +71,7 @@ app.include_router(streamer_router)
 
 @app.get("/health")
 async def health_check() -> dict[str, str]:
-    return {"status": "ok", "service": "liner-web-gateway", "version": "0.1.4"}
+    return {"status": "ok", "service": "liner-web-gateway", "version": "0.1.6"}
 
 
 if __name__ == "__main__":

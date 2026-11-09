@@ -11,9 +11,12 @@ export function clearYoutubeStandInCache(): void {
 export async function findYoutubeStandIn(
   track: PlayableTrack,
   signal?: AbortSignal,
+  excludeVideoId?: string,
 ): Promise<string | null> {
-  const remembered = matchedVideoIds.get(track.id);
-  if (remembered) return remembered;
+  if (!excludeVideoId) {
+    const remembered = matchedVideoIds.get(track.id);
+    if (remembered) return remembered;
+  }
   const artist = track.artists.trim();
   if (!track.title.trim()) return null;
   const outcome = await findCatalogMatch(
@@ -24,9 +27,13 @@ export async function findYoutubeStandIn(
       ...(track.durationMs > 0 ? { durationMs: track.durationMs } : {}),
     },
     signal,
+    excludeVideoId,
   );
   if (outcome.status !== "approved") return null;
   const videoId = toVideoId(outcome.track.id);
-  if (videoId) matchedVideoIds.set(track.id, videoId);
-  return videoId;
+  if (videoId && videoId !== excludeVideoId) {
+    matchedVideoIds.set(track.id, videoId);
+    return videoId;
+  }
+  return null;
 }

@@ -147,9 +147,10 @@ async function resolveYoutubeStandIn(
   track: PlayableTrack,
   progressive: boolean,
   signal?: AbortSignal,
+  excludeVideoId?: string,
 ): Promise<PlaybackStream> {
-  const videoId = await findYoutubeStandIn(track, signal);
-  if (!videoId) {
+  const videoId = await findYoutubeStandIn(track, signal, excludeVideoId);
+  if (!videoId || videoId === excludeVideoId) {
     const scStream = await resolveSoundCloudFallback(track, signal);
     if (scStream) return scStream;
     throw new Error("No matching YouTube track found");
@@ -251,13 +252,23 @@ async function resolveYoutubeTrack(
     return await resolveYoutubeAudio(videoId, progressive, signal);
   } catch (ytError) {
     if (isAbortError(ytError, signal)) throw ytError;
-    const isWeb = typeof window !== "undefined" && !(window as any).linerElectron;
-    if (isWeb) {
+    log(
+      "yellow",
+      "playback",
+      `youtube audio failed for "${track.title}" (${videoId}): ${String(ytError)}, searching stand-in`,
+    );
+    try {
+      return await resolveYoutubeStandIn(track, progressive, signal, videoId);
+    } catch (standInErr) {
+      if (isAbortError(standInErr, signal)) throw standInErr;
       log(
         "yellow",
         "playback",
-        `youtube audio failed for "${track.title}", searching soundcloud fallback: ${String(ytError)}`,
+        `youtube stand-in failed: ${String(standInErr)}, searching soundcloud fallback`,
       );
+    }
+    const isWeb = typeof window !== "undefined" && !(window as any).linerElectron;
+    if (isWeb) {
       const scStream = await resolveSoundCloudFallback(track, signal);
       if (scStream) return scStream;
     }
@@ -278,11 +289,6 @@ async function resolveYoutubeTrack(
       if (isAbortError(invErr, signal)) throw invErr;
     }
     if (!isWeb) {
-      log(
-        "yellow",
-        "playback",
-        `youtube audio failed for "${track.title}", searching soundcloud fallback: ${String(ytError)}`,
-      );
       const scStream = await resolveSoundCloudFallback(track, signal);
       if (scStream) return scStream;
     }

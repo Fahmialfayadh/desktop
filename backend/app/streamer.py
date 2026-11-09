@@ -130,7 +130,31 @@ def sanitize_filename(name: str) -> str:
     return clean[:120] if clean else "audio"
 
 
+def _fetch_potoken_sync(video_id: str) -> tuple[Optional[str], Optional[str]]:
+    """Fetch minted PO token and visitor data from local minter if available."""
+    try:
+        import json
+        import urllib.request
+        with urllib.request.urlopen(f"http://127.0.0.1:4416/potoken?videoId={video_id}", timeout=25) as resp:
+            pot_data = json.loads(resp.read().decode("utf-8"))
+            return pot_data.get("poToken"), pot_data.get("visitorData")
+    except Exception:
+        return None, None
+
+
 def _sync_extract_info(video_id: str) -> dict:
+    po_token, visitor_data = _fetch_potoken_sync(video_id)
+    extractor_args = {
+        "youtube": {
+            "player_client": ["android"],
+            "player_skip": ["webpage", "configs", "initial_data"],
+        }
+    }
+    if po_token:
+        extractor_args["youtube"]["po_token"] = [f"android.gvs+{po_token}"]
+    if visitor_data:
+        extractor_args["youtube"]["visitor_data"] = [visitor_data]
+
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,
@@ -141,48 +165,22 @@ def _sync_extract_info(video_id: str) -> dict:
         "source_address": "0.0.0.0",
         "js_runtimes": {"node": {}},
         "remote_components": ["ejs:github"],
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android"],
-                "player_skip": ["webpage", "configs", "initial_data"],
-            }
-        },
+        "extractor_args": extractor_args,
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             return ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
     except Exception as exc:
-        # Fallback: attempt extraction using web client with minted PO token if local minter is up
-        try:
-            import json
-            import urllib.request
-            with urllib.request.urlopen(f"http://127.0.0.1:4416/potoken?videoId={video_id}", timeout=5) as resp:
-                pot_data = json.loads(resp.read().decode("utf-8"))
-                po_token = pot_data.get("poToken")
-                visitor_data = pot_data.get("visitorData")
+        if not po_token:
+            # If initial run had no PO token, try fetching again and retrying
+            po_token, visitor_data = _fetch_potoken_sync(video_id)
             if po_token:
-                ydl_opts_pot = {
-                    "quiet": True,
-                    "no_warnings": True,
-                    "noplaylist": True,
-                    "extract_flat": False,
-                    "format": "bestaudio/18/best",
-                    "cachedir": False,
-                    "source_address": "0.0.0.0",
-                    "js_runtimes": {"node": {}},
-                    "remote_components": ["ejs:github"],
-                    "extractor_args": {
-                        "youtube": {
-                            "player_client": ["android"],
-                            "po_token": [f"android.gvs+{po_token}"],
-                            "visitor_data": [visitor_data] if visitor_data else [],
-                        }
-                    },
-                }
-                with yt_dlp.YoutubeDL(ydl_opts_pot) as ydl:
+                extractor_args["youtube"]["po_token"] = [f"android.gvs+{po_token}"]
+                if visitor_data:
+                    extractor_args["youtube"]["visitor_data"] = [visitor_data]
+                ydl_opts["extractor_args"] = extractor_args
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     return ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
-        except Exception:
-            pass
         raise exc
 
 
@@ -537,6 +535,18 @@ def _sync_download_mp3(video_id: str, output_path: str, title: Optional[str], ar
     if artist:
         postprocessor_args.extend(["-metadata", f"artist={artist}"])
 
+    po_token, visitor_data = _fetch_potoken_sync(video_id)
+    extractor_args = {
+        "youtube": {
+            "player_client": ["android"],
+            "player_skip": ["webpage", "configs", "initial_data"],
+        }
+    }
+    if po_token:
+        extractor_args["youtube"]["po_token"] = [f"android.gvs+{po_token}"]
+    if visitor_data:
+        extractor_args["youtube"]["visitor_data"] = [visitor_data]
+
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,
@@ -546,12 +556,7 @@ def _sync_download_mp3(video_id: str, output_path: str, title: Optional[str], ar
         "outtmpl": output_path.replace(".mp3", ".%(ext)s"),
         "js_runtimes": {"node": {}},
         "remote_components": ["ejs:github"],
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android"],
-                "player_skip": ["webpage", "configs", "initial_data"],
-            }
-        },
+        "extractor_args": extractor_args,
         "postprocessors": [
             {
                 "key": "FFmpegExtractAudio",
