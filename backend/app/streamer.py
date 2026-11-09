@@ -138,6 +138,7 @@ def _sync_extract_info(video_id: str) -> dict:
         "extract_flat": False,
         "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best",
         "cachedir": False,
+        "source_address": "0.0.0.0",
         "js_runtimes": {"node": {}},
         "remote_components": ["ejs:github"],
         "extractor_args": {

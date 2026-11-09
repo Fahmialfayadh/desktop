@@ -43,6 +43,16 @@ export async function resolveInvidiousAudioStream(
         mimeType.includes("mp4") || mimeType.includes("m4a")
           ? "mp4a.40.2"
           : "opus";
+
+      // Verify stream is actually reachable (not 403 IP-bound by Google CDN)
+      const probeRes = await fetch(best.url, {
+        method: "HEAD",
+        signal: combined,
+      });
+      if (!probeRes.ok) {
+        throw new Error(`stream returned HTTP ${probeRes.status}`);
+      }
+
       return {
         url: best.url,
         mimeType,
