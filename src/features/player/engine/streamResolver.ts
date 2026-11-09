@@ -252,6 +252,16 @@ async function resolveYoutubeTrack(
     return await resolveYoutubeAudio(videoId, progressive, signal);
   } catch (ytError) {
     if (isAbortError(ytError, signal)) throw ytError;
+    const isWeb = typeof window !== "undefined" && !(window as any).linerElectron;
+    if (isWeb) {
+      log(
+        "yellow",
+        "playback",
+        `youtube audio failed for "${track.title}", searching soundcloud fallback: ${String(ytError)}`,
+      );
+      const scStream = await resolveSoundCloudFallback(track, signal);
+      if (scStream) return scStream;
+    }
     log(
       "yellow",
       "playback",
@@ -264,13 +274,8 @@ async function resolveYoutubeTrack(
       log(
         "yellow",
         "playback",
-        `youtube stand-in failed: ${String(standInErr)}, searching soundcloud fallback`,
+        `youtube stand-in failed: ${String(standInErr)}`,
       );
-    }
-    const isWeb = typeof window !== "undefined" && !(window as any).linerElectron;
-    if (isWeb) {
-      const scStream = await resolveSoundCloudFallback(track, signal);
-      if (scStream) return scStream;
     }
     try {
       const invidious = await resolveInvidiousAudioStream(videoId, signal);

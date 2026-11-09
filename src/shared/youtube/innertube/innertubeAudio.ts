@@ -14,6 +14,7 @@ import {
 import { resolveWithProfile } from "./profileAudio";
 import { canMintWebPoToken, getWebPoToken } from "./webPoToken";
 import { assertStreamReachable, isStreamRefused } from "./streamProbe";
+import { isBotCheckError } from "../auth/signInRequest";
 import type { ResolvedAudioStream } from "./innertubeAudioFormats";
 
 export type { ResolvedAudioStream } from "./innertubeAudioFormats";
@@ -179,7 +180,10 @@ export async function resolveDirectAudioStream(
       failures.push(
         `${profile.clientName}: ${error instanceof Error ? error.message : String(error)}`,
       );
-      // Continue to next profile (e.g. profiles with PO token) if one profile triggers bot check
+      if (realWeb && isBotCheckError(error)) {
+        // Network/proxy is flagged by bot check; skip remaining Innertube profiles to avoid timeout
+        break;
+      }
     }
   }
   if (profilesTried > 0 && profilesRefused === profilesTried)
