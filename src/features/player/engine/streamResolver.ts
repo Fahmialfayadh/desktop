@@ -171,6 +171,11 @@ async function resolveYoutubeStandIn(
     return stream;
   } catch (ytError) {
     if (isAbortError(ytError, signal)) throw ytError;
+    const isWeb = typeof window !== "undefined" && !(window as any).linerElectron;
+    if (isWeb) {
+      const scStream = await resolveSoundCloudFallback(track, signal);
+      if (scStream) return scStream;
+    }
     try {
       const invidious = await resolveInvidiousAudioStream(videoId, signal);
       if (invidious) {
@@ -188,8 +193,10 @@ async function resolveYoutubeStandIn(
     } catch (invErr) {
       if (isAbortError(invErr, signal)) throw invErr;
     }
-    const scStream = await resolveSoundCloudFallback(track, signal);
-    if (scStream) return scStream;
+    if (!isWeb) {
+      const scStream = await resolveSoundCloudFallback(track, signal);
+      if (scStream) return scStream;
+    }
     throw ytError;
   }
 }
@@ -244,6 +251,16 @@ async function resolveYoutubeTrack(
     return await resolveYoutubeAudio(videoId, progressive, signal);
   } catch (ytError) {
     if (isAbortError(ytError, signal)) throw ytError;
+    const isWeb = typeof window !== "undefined" && !(window as any).linerElectron;
+    if (isWeb) {
+      log(
+        "yellow",
+        "playback",
+        `youtube audio failed for "${track.title}", searching soundcloud fallback: ${String(ytError)}`,
+      );
+      const scStream = await resolveSoundCloudFallback(track, signal);
+      if (scStream) return scStream;
+    }
     try {
       const invidious = await resolveInvidiousAudioStream(videoId, signal);
       if (invidious) {
@@ -260,13 +277,15 @@ async function resolveYoutubeTrack(
     } catch (invErr) {
       if (isAbortError(invErr, signal)) throw invErr;
     }
-    log(
-      "yellow",
-      "playback",
-      `youtube audio failed for "${track.title}", searching soundcloud fallback: ${String(ytError)}`,
-    );
-    const scStream = await resolveSoundCloudFallback(track, signal);
-    if (scStream) return scStream;
+    if (!isWeb) {
+      log(
+        "yellow",
+        "playback",
+        `youtube audio failed for "${track.title}", searching soundcloud fallback: ${String(ytError)}`,
+      );
+      const scStream = await resolveSoundCloudFallback(track, signal);
+      if (scStream) return scStream;
+    }
     throw ytError;
   }
 }

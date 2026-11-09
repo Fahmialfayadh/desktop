@@ -15,6 +15,7 @@ import { logNowPlaying } from "./nowPlayingLog";
 import {
   downloadAudioBytes,
   isBotCheckError,
+  isGoogleVideoUrl,
   isYoutubeSignInDeclined,
   isYoutubeSignedIn,
   prefersSignInPrompt,
@@ -708,8 +709,11 @@ export class PlayerRuntime {
 
   private attachSource(url: string, isBlob: boolean, trackId: string) {
     const previousBlob = this.activeBlobUrl;
-    const isDirectExternal = !isBlob && url.includes("googlevideo.com");
+    const isDirectExternal = !isBlob && isGoogleVideoUrl(url);
     if (isDirectExternal) {
+      if (pitchShifter.isAttached()) {
+        this.recycleAudioElementForNativeHardware();
+      }
       this.audio.removeAttribute("crossorigin");
     } else {
       this.audio.crossOrigin = "anonymous";
@@ -1265,6 +1269,14 @@ export class PlayerRuntime {
   ): Promise<Blob | null> {
     if (stream.blob) return stream.blob;
     if (stream.completed) return stream.completed;
+    if (
+      import.meta.env.MODE !== "test" &&
+      typeof window !== "undefined" &&
+      !(window as any).linerElectron &&
+      isGoogleVideoUrl(stream.url)
+    ) {
+      return null;
+    }
     const startedAt = performance.now();
     let bytes: Uint8Array<ArrayBuffer> | null;
     try {

@@ -1,6 +1,8 @@
 import { Innertube, Platform } from "youtubei.js/web";
 import { getClientVisitorData } from "../session/visitorSession";
 import { InnertubeError } from "./innertubeClient";
+import { getWebPoToken } from "./webPoToken";
+import { log } from "@/shared/utils/logger";
 import {
   selectBestAudioFormat,
   toResolvedStream,
@@ -32,7 +34,8 @@ function installPlayerEvaluator(): void {
 async function createSession(visitorData: string): Promise<WebRemixSession> {
   const innertube = await Innertube.create({
     visitor_data: visitorData,
-    user_agent: navigator.userAgent,
+    user_agent:
+      typeof navigator !== "undefined" ? navigator.userAgent : undefined,
     generate_session_locally: true,
     retrieve_player: true,
     fetch: (input, init) => fetch(input, init),
@@ -67,14 +70,23 @@ export async function getWebPlayer(): Promise<WebPlayer> {
   return player;
 }
 
-async function mintContentPoToken(videoId: string): Promise<string> {
-  const mint =
-    typeof window === "undefined"
-      ? undefined
-      : window.linerElectron?.mintPoToken;
-  if (!mint)
-    throw new InnertubeError("PO tokens need a newer Liner app version.", 501);
-  return mint(videoId);
+async function mintContentPoToken(
+  videoId: string,
+  signal?: AbortSignal,
+): Promise<{ poToken: string; visitorData?: string }> {
+  if (typeof window !== "undefined" && window.linerElectron?.mintPoToken) {
+    const token = await window.linerElectron.mintPoToken(videoId);
+    return { poToken: token };
+  }
+  if (typeof window !== "undefined") {
+    try {
+      const res = await getWebPoToken(videoId, signal);
+      return { poToken: res.poToken, visitorData: res.visitorData };
+    } catch (err) {
+      log("yellow", "playback", `web PO token minter failed: ${String(err)}`);
+    }
+  }
+  throw new InnertubeError("PO tokens need a newer Liner app version.", 501);
 }
 
 function throwIfAborted(signal?: AbortSignal): void {
@@ -87,10 +99,10 @@ export async function resolveWebRemixAudioStream(
   options: { signal?: AbortSignal; preferredCodec?: "opus" | "aac" } = {},
 ): Promise<ResolvedAudioStream> {
   installPlayerEvaluator();
-  const [poToken, visitorData] = await Promise.all([
-    mintContentPoToken(videoId),
-    getClientVisitorData(),
-  ]);
+  const tokenData = await mintContentPoToken(videoId, options.signal);
+  const poToken = tokenData.poToken;
+  const visitorData =
+    tokenData.visitorData || (await getClientVisitorData());
   throwIfAborted(options.signal);
   const { innertube } = await getSession(visitorData);
   throwIfAborted(options.signal);

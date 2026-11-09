@@ -173,8 +173,8 @@ def _sync_extract_info(video_id: str) -> dict:
                     "remote_components": ["ejs:github"],
                     "extractor_args": {
                         "youtube": {
-                            "player_client": ["web"],
-                            "po_token": [f"web.gvs+{po_token}"],
+                            "player_client": ["android"],
+                            "po_token": [f"android.gvs+{po_token}"],
                             "visitor_data": [visitor_data] if visitor_data else [],
                         }
                     },
