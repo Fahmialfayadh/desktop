@@ -140,7 +140,12 @@ def _sync_extract_info(video_id: str) -> dict:
         "cachedir": False,
         "js_runtimes": {"node": {}},
         "remote_components": ["ejs:github"],
-        "extractor_args": {"youtube": {"player_client": ["android"]}},
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android"],
+                "player_skip": ["webpage", "configs", "initial_data"],
+            }
+        },
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         return ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)

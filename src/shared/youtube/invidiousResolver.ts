@@ -7,8 +7,6 @@ export interface InvidiousStreamResult {
 
 const INVIDIOUS_INSTANCES = [
   "https://yt.chocolatemoo53.com",
-  "https://inv.tux.pizza",
-  "https://invidious.jing.rocks",
 ];
 
 export async function resolveInvidiousAudioStream(
