@@ -178,25 +178,10 @@ async function resolveYoutubeStandIn(
   const isWeb = isRealWebRuntime();
   const useAccount = isYoutubeSignedIn() && prefersAccountPlayback();
 
-  // On web without sign-in, try fast Invidious resolution before heavy Innertube
+  // On web without sign-in, try fast Soundcloud fallback before heavy Innertube
   if (isWeb && !useAccount) {
-    try {
-      const invidious = await resolveInvidiousAudioStream(videoId, signal);
-      if (invidious) {
-        log("cyan", "playback", `resolved invidious stream for stand-in "${track.title}"`);
-        return {
-          url: invidious.url,
-          source: "youtube",
-          expiresAtMs: Date.now() + 6 * 3600 * 1000,
-          mimeType: invidious.mimeType,
-          codec: invidious.codec,
-          bitrate: invidious.bitrate,
-          standIn: true,
-        };
-      }
-    } catch (invErr) {
-      if (isAbortError(invErr, signal)) throw invErr;
-    }
+    const scStream = await resolveSoundCloudFallback(track, signal);
+    if (scStream) return scStream;
   }
 
   try {
@@ -284,25 +269,8 @@ async function resolveYoutubeTrack(
   const isWeb = isRealWebRuntime();
   const useAccount = isYoutubeSignedIn() && prefersAccountPlayback();
 
-  // On web without sign-in, try fast Invidious resolution and Soundcloud fallback before heavy Innertube
+  // On web without sign-in, try fast Soundcloud fallback before heavy Innertube
   if (isWeb && !useAccount) {
-    try {
-      const invidious = await resolveInvidiousAudioStream(videoId, signal);
-      if (invidious) {
-        log("cyan", "playback", `resolved invidious stream for "${track.title}"`);
-        return {
-          url: invidious.url,
-          source: "youtube",
-          expiresAtMs: Date.now() + 6 * 3600 * 1000,
-          mimeType: invidious.mimeType,
-          codec: invidious.codec,
-          bitrate: invidious.bitrate,
-        };
-      }
-    } catch (invErr) {
-      if (isAbortError(invErr, signal)) throw invErr;
-    }
-
     const scStream = await resolveSoundCloudFallback(track, signal);
     if (scStream) return scStream;
 

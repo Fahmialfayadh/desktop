@@ -14,6 +14,11 @@ export async function resolveInvidiousAudioStream(
   signal?: AbortSignal,
 ): Promise<InvidiousStreamResult | null> {
   if (import.meta.env.MODE === "test") return null;
+  // In pure web browser runtime, Google Video URLs from Invidious are IP-bound
+  // to the Invidious server and produce 403 / MEDIA_ELEMENT_ERROR format error in <audio>.
+  if (typeof window !== "undefined" && !(window as any).linerElectron) {
+    return null;
+  }
 
   const probe = async (instance: string): Promise<InvidiousStreamResult> => {
     const timeout = AbortSignal.timeout(2500);
